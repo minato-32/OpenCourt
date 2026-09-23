@@ -5,7 +5,7 @@ Standalone repo. **No git / no PR / no issues** until the user instructs (they w
 ## Decisions locked
 - PoP source = reuse on-chain `ZKPassportRegistry.isVerified()` (same-chain read; dissolves the
   cross-chain People Chain blocker).
-- Standalone `jury-protocol` repo (tooling copied from p2p-market).
+- Standalone `getcourt` repo (tooling copied from p2p-market).
 - v1 depth = **Phase-1 MVP → then SDK** → then generality (registry / appeals).
 - SDK = standalone PAPI (headless juror daemon).
 - Toolchain = Solidity 0.8.28 + viaIR + `@parity/hardhat-polkadot` (resolc → PolkaVM), OZ ^5,

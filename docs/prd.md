@@ -1,7 +1,7 @@
-# PRD — Generic Jury Protocol for Polkadot
+# PRD — GetCourt for Polkadot
 
 **Codename:** TBD · **Status:** Draft for build · **Owner:** Bhavya
-**Supersedes:** `jury-protocol-build-plan.md` (kept in-repo as `docs/spec.md`)
+**Supersedes:** `getcourt-build-plan.md` (kept in-repo as `docs/spec.md`)
 
 ---
 
@@ -463,7 +463,7 @@ Ship adapters for an OpenGov track, an OZ `Governor` veto hook, and a Safe modul
 **NFR:** the console is never the source of truth. Every console action must be reproducible via
 SDK or direct contract call.
 
-### 6.2 SDK (`@org/jury-sdk`)
+### 6.2 SDK (`@getcourt/sdk`)
 
 ```ts
 const jury = new JuryClient({ chain: 'paseo-asset-hub', signer });
@@ -643,7 +643,7 @@ Publish crate · DAO adapters · XCM · Filecoin/Crust evidence deals · timeloc
 ## 14. Appendix — workspace layout
 
 ```
-jury-protocol/
+getcourt/
 ├── contracts/src/interfaces/   IArbitrator IArbitrable IEligibility
 │                               IIncentivePolicy IFeePolicy
 ├── contracts/src/core/         ArbitratorCore CourtRegistry CourtRouter

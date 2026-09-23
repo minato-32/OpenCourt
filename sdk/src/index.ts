@@ -1,5 +1,5 @@
 /**
- * @jury/sdk — standalone PAPI SDK for the Generic Jury Protocol.
+ * @getcourt/sdk — standalone PAPI SDK for the GetCourt.
  *
  * Layers:
  *   - transport:  ContractClient (read/write any pallet-revive contract)

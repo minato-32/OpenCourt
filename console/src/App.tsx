@@ -33,7 +33,7 @@ export default function App() {
         <div className="brand">
           <span className="dot" />
           <div>
-            <h1>Jury Protocol</h1>
+            <h1>GetCourt</h1>
             <p className="sub">
               {CHAIN.name} · block {head || '…'} · {CHAIN.blockTimeSeconds}s blocks
             </p>

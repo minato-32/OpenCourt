@@ -1,5 +1,5 @@
 /**
- * Deploy jury-protocol contracts to Paseo Asset Hub Next via PAPI + an sr25519
+ * Deploy getcourt contracts to Paseo Asset Hub Next via PAPI + an sr25519
  * mnemonic signer.
  *
  * WHY PAPI (not hardhat eth-rpc): the funded deployer is an SS58/sr25519 wallet

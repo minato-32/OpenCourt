@@ -1,7 +1,7 @@
 // Reveal-salt persistence. A lost salt is a gamma slash, so salts are stored per
 // (court, dispute, juror), encrypted with a passphrase, and always exportable.
 
-const DB = 'jury-salts';
+const DB = 'getcourt-salts';
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
@@ -115,7 +115,7 @@ export function exportBackup(): void {
   const blob = new Blob([JSON.stringify(all(), null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'jury-salts-backup.json';
+  a.download = 'getcourt-salts-backup.json';
   a.click();
   URL.revokeObjectURL(a.href);
 }

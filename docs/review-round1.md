@@ -1,4 +1,4 @@
-# Jury Protocol — Final Per-File Review Report
+# GetCourt — Final Per-File Review Report
 
 Date: 2026-07-21 · Scope: contracts/, sdk/, scripts/, test/ · Basis: verified findings only (confirmed + verification-pass additions; false positives excluded)
 

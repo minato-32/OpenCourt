@@ -5,7 +5,7 @@ import {IArbitrator} from "../interfaces/IArbitrator.sol";
 import {IArbitrable} from "../interfaces/IArbitrable.sol";
 import {IEligibility} from "../interfaces/IEligibility.sol";
 
-/// @title ArbitratorCore — Phase-2 of the Generic Jury Protocol (one court).
+/// @title ArbitratorCore — Phase-2 of the GetCourt (one court).
 /// @notice A single hardcoded court that resolves disputes via a commit-reveal
 ///         jury drawn by hash-based sortition. The protocol never knows what a
 ///         dispute is about. Built for pallet-revive on Paseo Asset Hub.
