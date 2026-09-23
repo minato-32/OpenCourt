@@ -1,0 +1,24 @@
+{
+  "name": "@jury/sdk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Standalone PAPI SDK for the Generic Jury Protocol — app helpers + headless juror daemon.",
+  "license": "GPL-3.0-only",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@polkadot-labs/hdkd": "^0.0.10",
+    "@polkadot-labs/hdkd-helpers": "^0.0.10",
+    "ethers": "^6.10.0",
+    "polkadot-api": "^1.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "typescript": "^5.9.3"
+  }
+}
