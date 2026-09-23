@@ -7,6 +7,7 @@ import type { WalletAccount } from './lib/wallet';
 import { WalletBar } from './views/WalletBar';
 import { CourtCard } from './views/CourtCard';
 import { DisputeExplorer } from './views/DisputeExplorer';
+import { JurorPanel } from './views/JurorPanel';
 
 export default function App() {
   const [head, setHead] = useState<number>(0);
@@ -56,6 +57,7 @@ export default function App() {
 
       <main>
         <CourtCard court={court} />
+        <JurorPanel court={court} head={head} account={account} />
         <DisputeExplorer court={court} head={head} account={account} />
       </main>
 

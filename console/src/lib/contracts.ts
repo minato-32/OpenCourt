@@ -108,6 +108,20 @@ export const activeAtOf = async (core: string, who: string) =>
 export const weightOf = async (core: string, who: string) =>
   (await read(core, coreAbi, 'weightOf', [who]))[0] as bigint;
 
+/** IEligibility is one function; no need to ship a whole artifact for it. */
+export const eligibilityAbi: ethers.InterfaceAbi = [
+  {
+    type: 'function',
+    name: 'isEligible',
+    stateMutability: 'view',
+    inputs: [{ name: 'juror', type: 'address' }],
+    outputs: [{ name: '', type: 'bool' }],
+  },
+];
+
+export const isEligible = async (eligibility: string, who: string) =>
+  (await read(eligibility, eligibilityAbi, 'isEligible', [who]))[0] as boolean;
+
 /** q* implied by a config, same one-third-dissent model the constructor guard uses. */
 export function qStar(cfg: CourtConfig): number {
   const BPS = 10_000n;
