@@ -16,8 +16,22 @@ export function WalletBar({
   const [exts, setExts] = useState<string[]>([]);
   const [accounts, setAccounts] = useState<WalletAccount[]>([]);
   const [err, setErr] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(true);
 
-  useEffect(() => setExts(listExtensions()), []);
+  // Extensions inject after page load, so poll for a few seconds before giving up.
+  useEffect(() => {
+    let tries = 0;
+    const tick = () => {
+      const found = listExtensions();
+      if (found.length) {
+        setExts(found);
+        return setScanning(false);
+      }
+      if (++tries < 20) return void setTimeout(tick, 250);
+      setScanning(false);
+    };
+    tick();
+  }, []);
 
   async function pickExtension(name: string) {
     setErr(null);
@@ -34,8 +48,8 @@ export function WalletBar({
   if (!exts.length) {
     return (
       <div className="wallet">
-        <span className="muted">No wallet extension detected</span>
-        <span className="hint">Install Talisman or polkadot-js — reads work without it</span>
+        <span className="muted">{scanning ? 'Looking for a wallet extension…' : 'No wallet extension detected'}</span>
+        {!scanning && <span className="hint">Install Talisman or polkadot-js — reads work without it</span>}
       </div>
     );
   }
