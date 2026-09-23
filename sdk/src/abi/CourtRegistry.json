@@ -1,0 +1,477 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "string",
+        "name": "what",
+        "type": "string"
+      }
+    ],
+    "name": "BadConfig",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ConfigMismatch",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "NotACourt",
+    "type": "error"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "courtId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "arbitrator",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "registrant",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "configHash",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "bool",
+        "name": "verified",
+        "type": "bool"
+      }
+    ],
+    "name": "CourtRegistered",
+    "type": "event"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "courtId",
+        "type": "uint256"
+      }
+    ],
+    "name": "courtArbitrator",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "courtCount",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "courtId",
+        "type": "uint256"
+      }
+    ],
+    "name": "courtVerified",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "known",
+        "type": "bool"
+      },
+      {
+        "internalType": "bool",
+        "name": "verified",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "courts",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "arbitrator",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "eligibility",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "registrant",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "configHash",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bool",
+        "name": "active",
+        "type": "bool"
+      },
+      {
+        "internalType": "bool",
+        "name": "verified",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "minStake",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "jurorFee",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "drawThreshold",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint64",
+            "name": "activationDelayBlocks",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "drawDelayBlocks",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "drawWindowBlocks",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "commitBlocks",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "revealBlocks",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint32",
+            "name": "panelSize",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint16",
+            "name": "betaBps",
+            "type": "uint16"
+          },
+          {
+            "internalType": "uint16",
+            "name": "gammaBps",
+            "type": "uint16"
+          },
+          {
+            "internalType": "uint16",
+            "name": "thetaBps",
+            "type": "uint16"
+          },
+          {
+            "internalType": "uint16",
+            "name": "quorumBps",
+            "type": "uint16"
+          },
+          {
+            "internalType": "uint16",
+            "name": "appFeeBps",
+            "type": "uint16"
+          },
+          {
+            "internalType": "uint16",
+            "name": "protocolFeeBps",
+            "type": "uint16"
+          },
+          {
+            "internalType": "address",
+            "name": "treasury",
+            "type": "address"
+          }
+        ],
+        "internalType": "struct ArbitratorCore.CourtConfig",
+        "name": "cfg",
+        "type": "tuple"
+      },
+      {
+        "internalType": "address",
+        "name": "eligibility",
+        "type": "address"
+      }
+    ],
+    "name": "createCourt",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "courtId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "arbitrator",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "arbitrator",
+        "type": "address"
+      },
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "minStake",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "jurorFee",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "drawThreshold",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint64",
+            "name": "activationDelayBlocks",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "drawDelayBlocks",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "drawWindowBlocks",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "commitBlocks",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "revealBlocks",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint32",
+            "name": "panelSize",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint16",
+            "name": "betaBps",
+            "type": "uint16"
+          },
+          {
+            "internalType": "uint16",
+            "name": "gammaBps",
+            "type": "uint16"
+          },
+          {
+            "internalType": "uint16",
+            "name": "thetaBps",
+            "type": "uint16"
+          },
+          {
+            "internalType": "uint16",
+            "name": "quorumBps",
+            "type": "uint16"
+          },
+          {
+            "internalType": "uint16",
+            "name": "appFeeBps",
+            "type": "uint16"
+          },
+          {
+            "internalType": "uint16",
+            "name": "protocolFeeBps",
+            "type": "uint16"
+          },
+          {
+            "internalType": "address",
+            "name": "treasury",
+            "type": "address"
+          }
+        ],
+        "internalType": "struct ArbitratorCore.CourtConfig",
+        "name": "cfg",
+        "type": "tuple"
+      }
+    ],
+    "name": "registerCourt",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "courtId",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "minStake",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "jurorFee",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "drawThreshold",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint64",
+            "name": "activationDelayBlocks",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "drawDelayBlocks",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "drawWindowBlocks",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "commitBlocks",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
+            "name": "revealBlocks",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint32",
+            "name": "panelSize",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint16",
+            "name": "betaBps",
+            "type": "uint16"
+          },
+          {
+            "internalType": "uint16",
+            "name": "gammaBps",
+            "type": "uint16"
+          },
+          {
+            "internalType": "uint16",
+            "name": "thetaBps",
+            "type": "uint16"
+          },
+          {
+            "internalType": "uint16",
+            "name": "quorumBps",
+            "type": "uint16"
+          },
+          {
+            "internalType": "uint16",
+            "name": "appFeeBps",
+            "type": "uint16"
+          },
+          {
+            "internalType": "uint16",
+            "name": "protocolFeeBps",
+            "type": "uint16"
+          },
+          {
+            "internalType": "address",
+            "name": "treasury",
+            "type": "address"
+          }
+        ],
+        "internalType": "struct ArbitratorCore.CourtConfig",
+        "name": "cfg",
+        "type": "tuple"
+      },
+      {
+        "internalType": "address",
+        "name": "eligibility",
+        "type": "address"
+      }
+    ],
+    "name": "validateConfig",
+    "outputs": [],
+    "stateMutability": "pure",
+    "type": "function"
+  }
+]

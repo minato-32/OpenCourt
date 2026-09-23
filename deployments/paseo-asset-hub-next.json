@@ -37,10 +37,10 @@
     }
   },
   "feature1LiveProof": {
-    "note": "scripts/demo-feature1-live.ts — a genuine 1-1 tie with one silent juror, run end to end on chain. Court used short phase windows so the cycle fits in minutes.",
-    "ArbitratorCore": "0x6968b0ec3aee7b64264bea741c8e433a7dbb7705",
-    "SimpleEscrow": "0x1677a8fb11d3af34888e0f517ebb28e2bd83007f",
-    "StakeWeightedEligibility": "0xcc20f20434b91c3a5ffe74c503783b176b847fd0",
+    "note": "scripts/demo-feature1-live.ts \u2014 a genuine 1-1 tie with one silent juror, run end to end on chain. Court used short phase windows so the cycle fits in minutes.",
+    "ArbitratorCore": "0xc3e7780495792b5285ff1ed20bcbfb4e6a76f92b",
+    "SimpleEscrow": "0xe70539b481cafc80c0d7f32e6ec0c8647f0dc143",
+    "StakeWeightedEligibility": "0xba4ad49ebf10d9887a8fd3f9c066b96b4df407c1",
     "result": {
       "ruling": 0,
       "tied": true,
@@ -52,7 +52,8 @@
       "treasury": "5 PAS",
       "preFixBehaviour": "each revealer would have received 90 PAS (a 10% beta slash for voting)"
     },
-    "qStarGuard": "the spec's underpaid court (panel 7, jurorFee 3, beta 2000bps -> q* 0.68) is rejected on chain with BadConfig(\"jurorsUnderpaid\")"
+    "qStarGuard": "the spec's underpaid court (panel 7, jurorFee 3, beta 2000bps -> q* 0.68) is rejected on chain with BadConfig(\"jurorsUnderpaid\")",
+    "disputeId": 1
   },
   "supersededDeploys": [
     {
@@ -60,6 +61,12 @@
       "ArbitratorCore": "0xe28697764f7fcbe0bd4b847db31ecf529969aa70",
       "SimpleEscrow": "0x47ff58109b92d10ac2a68b7469e64d156b5cc134",
       "StakeWeightedEligibility": "0x060f70da9a5c06bff9f0578894306f58cc23a745"
+    },
+    {
+      "reason": "debug court from the run that lost its draw window (25-block window vs ~2s blocks); left with abandoned Drawing disputes",
+      "ArbitratorCore": "0x6968b0ec3aee7b64264bea741c8e433a7dbb7705",
+      "SimpleEscrow": "0x1677a8fb11d3af34888e0f517ebb28e2bd83007f",
+      "StakeWeightedEligibility": "0xcc20f20434b91c3a5ffe74c503783b176b847fd0"
     }
   ],
   "chainLevelFindings": [

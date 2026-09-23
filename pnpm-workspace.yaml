@@ -1,0 +1,11 @@
+packages:
+  - 'sdk'
+  - 'console'
+
+allowBuilds:
+  cpu-features: false
+  esbuild: true
+  keccak: true
+  protobufjs: false
+  secp256k1: true
+  ssh2: false

@@ -1,0 +1,28 @@
+{
+  "name": "@jury/console",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Jury Protocol console — app UI + juror dashboard over the deployed courts. Reads straight from chain; there is no backend.",
+  "license": "GPL-3.0-only",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@polkadot-api/descriptors": "file:../.papi/descriptors",
+    "ethers": "^6.10.0",
+    "polkadot-api": "^1.9.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.9.3",
+    "vite": "^5.4.11"
+  }
+}
