@@ -21,6 +21,7 @@ import {
 import { CHAIN } from '../lib/contracts';
 import { blocksLeft, pas, short } from '../lib/format';
 import type { WalletAccount } from '../lib/wallet';
+import { DisputeActions } from './DisputeActions';
 
 interface Row {
   dispute: Dispute;
@@ -43,6 +44,7 @@ export function DisputeExplorer({
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
+  const [nonce, setNonce] = useState(0);
 
   useEffect(() => {
     let live = true;
@@ -81,7 +83,7 @@ export function DisputeExplorer({
     return () => {
       live = false;
     };
-  }, [court.core]);
+  }, [court.core, nonce]);
 
   if (err) return <section className="card err-card">Explorer failed: {err}</section>;
   if (!rows.length) return <section className="card">{loading ? 'Loading disputes…' : 'No disputes on this court yet.'}</section>;
@@ -139,6 +141,18 @@ export function DisputeExplorer({
                     No verdict carried. FR-ST-02: every juror who revealed keeps their stake and is
                     paid the fee — only silence is slashed.
                   </div>
+                )}
+
+                {cfg && (
+                  <DisputeActions
+                    court={court}
+                    cfg={cfg}
+                    dispute={d}
+                    round={account ? (row.rounds[account.h160] ?? null) : null}
+                    head={head}
+                    account={account}
+                    onDone={() => setNonce((n) => n + 1)}
+                  />
                 )}
 
                 <table className="seats">

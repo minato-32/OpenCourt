@@ -134,3 +134,12 @@ code { font-family: var(--mono); }
 .txline.signing { color: var(--muted); }
 .txline.done { color: var(--ok); border-color: rgba(63, 185, 80, 0.35); }
 .txline.error { color: var(--bad); border-color: rgba(248, 81, 73, 0.35); }
+
+.input.wide { width: 380px; }
+.btn.small { padding: 4px 9px; font-size: 12px; }
+
+.dispute-actions {
+  margin-top: 14px; padding: 12px; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--panel-2);
+}
+.dispute-actions .actions { margin-top: 10px; }
