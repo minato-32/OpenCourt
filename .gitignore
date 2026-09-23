@@ -1,0 +1,21 @@
+# Secrets — NEVER commit. Testnet dev wallet lives here.
+.env
+.env.local
+*.key
+keystore/
+
+# Deps / build
+node_modules/
+dist/
+artifacts/
+cache/
+typechain-types/
+coverage/
+coverage.json
+
+# Compiler binaries (fetched via `pnpm download:binaries`)
+bin/
+
+# Editor / OS
+.DS_Store
+*.log

@@ -1,0 +1,772 @@
+// SPDX-License-Identifier: GPL-3.0-only
+pragma solidity ^0.8.28;
+
+import {IArbitrator} from "../interfaces/IArbitrator.sol";
+import {IArbitrable} from "../interfaces/IArbitrable.sol";
+import {IEligibility} from "../interfaces/IEligibility.sol";
+
+/// @title ArbitratorCore — Phase-2 of the Generic Jury Protocol (one court).
+/// @notice A single hardcoded court that resolves disputes via a commit-reveal
+///         jury drawn by hash-based sortition. The protocol never knows what a
+///         dispute is about. Built for pallet-revive on Paseo Asset Hub.
+///
+/// Phase-2 mechanics on top of the Phase-1 MVP:
+///  - EVIDENCE: submitEvidence(id, cid) is event-only (no storage), callable
+///    Drawing..Revealing.
+///  - K-SLOT WEIGHTING: a juror who stakes N*minStake owns weight = N slots. Each
+///    slot self-selects independently (keccak(seed, juror, slot) < drawThreshold),
+///    each locks minStake, each is independently slashed. One commit / one reveal
+///    per juror covers ALL of that juror's seats in a round.
+///  - ALTERNATES: the draw admits up to drawTarget = ceil(1.4 * panelSize) seats,
+///    ranked by keccak output (lower = higher priority). On the commit -> reveal
+///    transition the seated set is chosen: committed primaries stay, primaries who
+///    did NOT commit are marked SILENT (still slashed) and their capacity is filled
+///    by the lowest-ranked committed alternates so quorum survives absentees.
+///  - GROSS-UP FEES: arbitrationCost grosses up an app fee + protocol fee so that
+///    rewarded jurors are always paid their full jurorFee first; the protocol fee
+///    is routed to the treasury.
+///  - NO-VERDICT SETTLEMENT (FR-ST-02 / FR-ST-03): a tie, a quorum failure or an
+///    empty reveal (ruling == 0) never punishes a juror who did the work. Every
+///    seat whose juror REVEALED is made whole and paid, whatever they voted; only
+///    silence is slashed.
+///
+/// Deliberate MVP tradeoffs kept from Phase 1 (documented, extractable later):
+///  - Sortition = keccak(seed, juror, slot) < drawThreshold. The seed mixes a
+///    FUTURE blockhash so a juror cannot grind before the draw opens. This is a
+///    deterministic (not secret) selector. We KEEP hash sortition on purpose: the
+///    juror daemon uses sr25519 accounts with no secp256k1 key, so an ecrecover /
+///    signature "VRF" would break. A secret ring-VRF selector is a pallet-era feature.
+///  - Payouts are PULL (withdraw), so no push-loop can revert/gas-bomb the core.
+///  - Settlement NEVER mints: everything paid out is escrowed stake + prepaid fees.
+///  - Appeals and a multi-court registry live outside this contract (CourtRegistry).
+contract ArbitratorCore is IArbitrator {
+    // ------------------------------------------------------------------ config
+    struct CourtConfig {
+        uint256 minStake; // stake locked per seat (one slot)
+        uint256 jurorFee; // fee paid to each rewarded seat (from the app's prepay)
+        uint256 drawThreshold; // keccak(seed,juror,slot) must be below this to self-select
+        uint64 activationDelayBlocks; // anti just-in-time staking
+        uint64 drawDelayBlocks; // Δ before the draw opens (future-blockhash seed)
+        uint64 drawWindowBlocks; // window to collect seat claims
+        uint64 commitBlocks; // commit phase length
+        uint64 revealBlocks; // reveal phase length
+        uint32 panelSize; // target seats (odd, <= MAX_PANEL)
+        uint16 betaBps; // incoherence slash of stake
+        uint16 gammaBps; // non-reveal slash of stake (gamma >= beta)
+        uint16 thetaBps; // treasury cut of the slashed pot
+        uint16 quorumBps; // min revealed weight / panelSize for a valid verdict
+        uint16 appFeeBps; // fee take credited back to the app at settlement
+        uint16 protocolFeeBps; // fee take routed to the treasury at settlement
+        address treasury; // receives the treasury cut + protocol fee (pull)
+    }
+
+    enum DisputeState {
+        None, // 0
+        Drawing, // 1
+        Committing, // 2
+        Revealing, // 3
+        Resolved // 4 (tallied, settled; ruling may still be pending delivery)
+    }
+
+    // Seat role, fixed at the commit->reveal transition (openReveal).
+    uint8 internal constant ROLE_RELEASED = 0; // admitted alternate that was not needed
+    uint8 internal constant ROLE_SEATED = 1; // committed, on duty to reveal
+    uint8 internal constant ROLE_SILENT = 2; // primary that never committed (still slashed)
+
+    // Protocol invariants — NOT configurable.
+    uint16 internal constant BPS = 10_000;
+    uint16 internal constant MAX_SLASH_BPS = 5_000; // no court may slash > 50%
+    uint16 internal constant MAX_TAKE_BPS = 2_000; // app + protocol fee take cap (jurors paid first)
+    uint16 internal constant ALT_FACTOR_BPS = 14_000; // over-draw = ceil(1.4 * panelSize)
+    uint16 internal constant MAX_QSTAR_RATIO = 6_000; // FR-CR-02: q* <= 0.60 (spec §7 band 0.5-0.6)
+    uint32 internal constant MAX_PANEL = 15;
+    uint8 internal constant MAX_CHOICES = 8; // K <= 8
+
+    // ------------------------------------------------------------------ state
+    CourtConfig public config;
+    IEligibility public immutable eligibility;
+    bytes32 public immutable configHash;
+    uint256 public immutable arbCost; // grossed-up arbitration cost, cached at deploy
+
+    /// @dev One entry per admitted SEAT (a juror may hold several under k-slot weighting).
+    struct SeatEntry {
+        address juror;
+        uint16 slot; // the juror's stake-slot index this seat came from
+        uint8 role; // ROLE_* — assigned at openReveal
+        bool settled;
+        uint256 vrfOutput; // keccak(seed, juror, slot); lower = higher draw priority
+        uint256 slotStake; // minStake locked for this seat
+    }
+
+    /// @dev Per-juror, per-dispute aggregate. Commit/reveal is once per juror and
+    ///      covers ALL of that juror's seats in the dispute.
+    struct JurorRound {
+        uint32 seatCount; // seats this juror holds
+        uint32 dutySeats; // of those, how many are ROLE_SEATED (set at openReveal)
+        bool committed;
+        bool revealed;
+        uint8 choice;
+        bytes32 commitment;
+    }
+
+    struct Dispute {
+        address app;
+        uint8 choices;
+        uint8 ruling;
+        bool tied;
+        bool ruled; // ruling delivered to the app
+        DisputeState state;
+        uint64 drawBlock;
+        uint64 commitDeadline;
+        uint64 revealDeadline;
+        uint32 seatCount; // total admitted seats
+        uint32 seatedWeight; // ROLE_SEATED seats (set at openReveal)
+        uint32 revealedCount; // revealed seat weight
+        uint256 feePot; // prepaid by the app at createDispute (== arbCost)
+        bytes32 configHash; // snapshot; settle against this, never live config
+    }
+
+    uint256 public disputeCount;
+    mapping(uint256 => Dispute) private _disputes;
+    mapping(uint256 => SeatEntry[]) private _seatsOf; // disputeId => seats
+    mapping(uint256 => mapping(address => JurorRound)) private _jurorRound;
+    mapping(uint256 => mapping(address => mapping(uint16 => bool))) private _slotClaimed;
+    mapping(uint256 => mapping(uint8 => uint32)) private _votes; // disputeId => choice => weight
+
+    mapping(address => uint256) public staked; // free stake
+    mapping(address => uint64) public activeAt; // block from which stake is eligible
+    mapping(address => uint256) public withdrawable; // pull-payment balance
+
+    // reentrancy guard (custom, matching p2p-market convention — not OZ)
+    uint256 private _lock = 1;
+    modifier noReentrant() {
+        require(_lock == 1, "reentrant");
+        _lock = 2;
+        _;
+        _lock = 1;
+    }
+
+    // ------------------------------------------------------------------ events
+    event Staked(address indexed juror, uint256 amount, uint64 activeAt);
+    event Unstaked(address indexed juror, uint256 amount);
+    event DisputeCreated(uint256 indexed disputeId, address indexed app, uint8 choices, uint64 drawBlock);
+    event SeatGranted(uint256 indexed disputeId, address indexed juror, uint32 seatCount);
+    event SeatClaimed(uint256 indexed disputeId, address indexed juror, uint16 slot, uint256 vrfOutput);
+    event DrawingClosed(uint256 indexed disputeId, uint32 seatCount);
+    event PhaseAdvanced(uint256 indexed disputeId, DisputeState state);
+    event PanelSeated(uint256 indexed disputeId, uint32 seatedWeight);
+    event VoteCommitted(uint256 indexed disputeId, address indexed juror);
+    event VoteRevealed(uint256 indexed disputeId, address indexed juror, uint8 choice, uint32 seats);
+    event DisputeResolved(uint256 indexed disputeId, uint8 ruling, bool tied);
+    event RulingDelivered(uint256 indexed disputeId, uint8 ruling);
+    event RulingDeliveryFailed(uint256 indexed disputeId);
+    event Slashed(uint256 indexed disputeId, address indexed juror, uint256 amount);
+    event Withdrawn(address indexed account, uint256 amount);
+    /// @notice Evidence pointer for a dispute. Event-only: the core stores NOTHING;
+    ///         the log IS the evidence record (an app/indexer reconstructs it).
+    event EvidenceSubmitted(uint256 indexed disputeId, address indexed submitter, string cid);
+
+    // ------------------------------------------------------------------ errors
+    error BadConfig(string what);
+    error WrongState();
+    error NotSeated();
+    error AlreadySeated();
+    error AlreadyCommitted();
+    error NotEligible();
+    error PanelFull();
+    error DrawClosed();
+    error TooEarly();
+    error BadChoice();
+    error BadReveal();
+    error InsufficientStake();
+    error StakeLocked();
+    error WrongFee(uint256 required);
+    error TransferFailed();
+    error NothingToWithdraw();
+    error AppNotContract();
+
+    constructor(CourtConfig memory cfg, address eligibilityPolicy) {
+        if (eligibilityPolicy == address(0)) revert BadConfig("eligibility");
+        if (cfg.panelSize == 0 || cfg.panelSize > MAX_PANEL || cfg.panelSize % 2 == 0) revert BadConfig("panelSize");
+        if (cfg.minStake == 0) revert BadConfig("minStake");
+        if (cfg.jurorFee == 0) revert BadConfig("jurorFee");
+        if (cfg.drawThreshold == 0) revert BadConfig("drawThreshold");
+        // drawDelay >= 1 (a real gap before the seed's blockhash) and window <= 255
+        // so every claimable block has a live blockhash. (Audit HIGH fix.)
+        if (cfg.drawDelayBlocks == 0) revert BadConfig("drawDelay");
+        if (cfg.drawWindowBlocks == 0 || cfg.drawWindowBlocks > 255) revert BadConfig("drawWindow");
+        // A zero commit or reveal window would close the phase in the same block it
+        // opens, freezing every seated stake (nobody can commit / a zero reveal
+        // window slashes every honest juror). activationDelayBlocks may be 0 (no
+        // anti-JIT delay) but must fit its uint64 field like every other block count.
+        if (cfg.commitBlocks == 0) revert BadConfig("commitBlocks");
+        if (cfg.revealBlocks == 0) revert BadConfig("revealBlocks");
+        if (cfg.betaBps > MAX_SLASH_BPS) revert BadConfig("betaBps");
+        if (cfg.gammaBps == 0 || cfg.gammaBps > MAX_SLASH_BPS) revert BadConfig("gammaBps");
+        // Non-reveal must cost at least as much as being wrong (gamma >= beta),
+        // else silence dominates. And when a court wants more security it must
+        // raise the FEE, not the penalty — see spec §5.
+        if (cfg.gammaBps < cfg.betaBps) revert BadConfig("gamma<beta");
+        if (cfg.thetaBps >= BPS) revert BadConfig("thetaBps");
+        if (cfg.quorumBps == 0 || cfg.quorumBps > BPS) revert BadConfig("quorumBps");
+        // App + protocol take is bounded, and jurors are paid FIRST out of the
+        // grossed-up cost (see arbitrationCost) — never underpaid by the take.
+        if (uint256(cfg.appFeeBps) + cfg.protocolFeeBps > MAX_TAKE_BPS) revert BadConfig("take");
+        if (cfg.treasury == address(0)) revert BadConfig("treasury");
+        // FR-CR-02 — jurors must not be underpaid for what they are made to risk.
+        // q* is the probability a rational juror would have to assign to "my vote
+        // ends up the incoherent one" before voting honestly stops paying:
+        //     q*       = atRisk / (atRisk + jurorFee + expectedPotShare)   <= 0.60
+        //     atRisk   = betaBps * minStake / BPS
+        //     potShare = (BPS - thetaBps) * betaBps * minStake * incoherent
+        //                / (BPS * BPS * coherent)
+        // with the spec's one-third-dissent panel model (incoherent = panelSize/3).
+        // Above the ceiling the court is buying security with the PENALTY instead of
+        // the FEE, which is exactly the parameterisation spec §7 forbids.
+        // Every term is carried SCALED BY BPS so a sub-unit pot share cannot truncate
+        // to zero, and the ratio is compared cross-multiplied (no division by the sum).
+        // MUST stay byte-identical to CourtRegistry.validateConfig (validation parity).
+        {
+            uint256 incoherent = uint256(cfg.panelSize) / 3; // modelled dissenting seats
+            uint256 coherent = uint256(cfg.panelSize) - incoherent; // >= 1 for panelSize >= 1
+            uint256 atRiskScaled = uint256(cfg.betaBps) * cfg.minStake; // atRisk * BPS
+            uint256 feeScaled = cfg.jurorFee * BPS; // jurorFee * BPS
+            // coherent == 0 is unreachable (panelSize >= 1 is checked above); guarded
+            // anyway so the expression can never divide by zero.
+            uint256 potScaled = coherent == 0
+                ? 0
+                : ((uint256(BPS) - cfg.thetaBps) * cfg.betaBps * cfg.minStake * incoherent)
+                    / (uint256(BPS) * coherent); // expectedPotShare * BPS
+            if (atRiskScaled * BPS > (atRiskScaled + feeScaled + potScaled) * MAX_QSTAR_RATIO) {
+                revert BadConfig("jurorsUnderpaid");
+            }
+        }
+
+        config = cfg;
+        eligibility = IEligibility(eligibilityPolicy);
+        configHash = keccak256(abi.encode(cfg));
+
+        // Gross-up: cost * (BPS - take) >= panelSize * jurorFee, so after the take is
+        // removed the remaining pot still covers every rewarded seat's full fee
+        // (rewarded seats are SEATED seats, so never more than panelSize of them).
+        // cost = ceil( panelSize * jurorFee * BPS / (BPS - appFeeBps - protocolFeeBps) ).
+        uint256 denom = uint256(BPS) - cfg.appFeeBps - cfg.protocolFeeBps; // > 0 by the take cap
+        uint256 num = uint256(cfg.panelSize) * cfg.jurorFee * BPS;
+        arbCost = (num + denom - 1) / denom;
+    }
+
+    // ------------------------------------------------------------ juror stake
+    /// @dev Re-arms the WHOLE balance's activation delay on EVERY stake, not only on
+    ///      the 0->nonzero transition. Otherwise an already-active juror could watch
+    ///      the public draw seed land and top up in-window to field extra seats with
+    ///      zero delay — panel capture. Re-arming forces even a top-up to wait out the
+    ///      full activationDelayBlocks before ANY of the juror's stake is eligible.
+    function stake() external payable noReentrant {
+        if (msg.value == 0) revert InsufficientStake();
+        activeAt[msg.sender] = uint64(block.number) + config.activationDelayBlocks;
+        staked[msg.sender] += msg.value;
+        emit Staked(msg.sender, msg.value, activeAt[msg.sender]);
+    }
+
+    function unstake(uint256 amount) external noReentrant {
+        if (amount > staked[msg.sender]) revert InsufficientStake();
+        staked[msg.sender] -= amount;
+        if (staked[msg.sender] == 0) activeAt[msg.sender] = 0; // re-delay on next stake
+        _pay(msg.sender, amount);
+        emit Unstaked(msg.sender, amount);
+    }
+
+    /// @notice Voting weight = number of independent slots a juror can field.
+    function weightOf(address juror) public view returns (uint256) {
+        return staked[juror] / config.minStake;
+    }
+
+    // -------------------------------------------------------------- evidence
+    /// @notice Attach an evidence pointer (e.g. an IPFS CID) to a live dispute.
+    /// @dev Callable by ANYONE while the dispute is open for argument — from the
+    ///      moment it is Drawing until it leaves Revealing. Purely event-emitting:
+    ///      no storage is written, so evidence can never bloat state or brick a
+    ///      dispute. The protocol never interprets the pointer.
+    function submitEvidence(uint256 disputeId, string calldata cid) external {
+        DisputeState st = _disputes[disputeId].state;
+        if (st != DisputeState.Drawing && st != DisputeState.Committing && st != DisputeState.Revealing) {
+            revert WrongState();
+        }
+        emit EvidenceSubmitted(disputeId, msg.sender, cid);
+    }
+
+    // -------------------------------------------------------------- disputes
+    /// @notice Over-draw target: ceil(1.4 * panelSize) seats (primaries + alternates).
+    function drawTarget() public view returns (uint32) {
+        return uint32((uint256(config.panelSize) * ALT_FACTOR_BPS + BPS - 1) / BPS);
+    }
+
+    /// @inheritdoc IArbitrator
+    /// @dev Grossed-up so that after the app + protocol take is removed, rewarded
+    ///      jurors are still paid the full panelSize * jurorFee. Cached at deploy.
+    function arbitrationCost(bytes calldata) public view returns (uint256) {
+        return arbCost;
+    }
+
+    /// @inheritdoc IArbitrator
+    function createDispute(uint8 choices, bytes calldata)
+        external
+        payable
+        noReentrant
+        returns (uint256 disputeId)
+    {
+        if (choices == 0 || choices > MAX_CHOICES) revert BadChoice();
+        // Reject a codeless (EOA) app. solc 0.8.28's `try IArbitrable(app).rule(...)`
+        // emits a pre-CALL extcodesize check that reverts OUTSIDE the catch for a
+        // codeless address — so at delivery finalize() would revert and freeze every
+        // juror stake forever. Require the app to be a contract at creation time.
+        // (_deliver additionally uses a low-level call so an app self-destructed AFTER
+        // creation still cannot brick settlement.)
+        if (msg.sender.code.length == 0) revert AppNotContract();
+        uint256 cost = arbCost;
+        if (msg.value != cost) revert WrongFee(cost);
+
+        disputeId = ++disputeCount;
+        Dispute storage d = _disputes[disputeId];
+        d.app = msg.sender;
+        d.choices = choices;
+        d.state = DisputeState.Drawing;
+        d.drawBlock = uint64(block.number) + config.drawDelayBlocks;
+        d.feePot = msg.value;
+        d.configHash = configHash;
+
+        emit DisputeCreated(disputeId, msg.sender, choices, d.drawBlock);
+    }
+
+    /// @notice Claim jury seats once the draw is open. A juror claims EVERY one of
+    ///         their weight slots that self-selects this round. Self-selection of
+    ///         slot k is keccak(seed, juror, k) < drawThreshold, where the seed
+    ///         anchors to the drawBlock's hash (unknown until the draw opens → not
+    ///         grindable). Admission is bounded at drawTarget seats; ranking of
+    ///         primaries vs alternates happens at openReveal (lowest keccak first).
+    function claimSeat(uint256 disputeId) external noReentrant {
+        Dispute storage d = _disputes[disputeId];
+        if (d.state != DisputeState.Drawing) revert WrongState();
+        // Strict >: at block == drawBlock, blockhash(drawBlock) is 0 and the seed
+        // would be precomputable at dispute creation -> panel capture. Require a
+        // real past block. (Audit CRITICAL fix.)
+        if (block.number <= d.drawBlock) revert TooEarly();
+        if (block.number > d.drawBlock + config.drawWindowBlocks) revert DrawClosed();
+        if (msg.sender == d.app) revert NotEligible(); // exclude the disputing app
+
+        uint32 target = drawTarget();
+        if (d.seatCount >= target) revert PanelFull();
+
+        uint64 aAt = activeAt[msg.sender];
+        if (aAt == 0 || block.number < aAt) revert NotEligible();
+        uint256 weight = weightOf(msg.sender);
+        if (weight == 0) revert InsufficientStake();
+        if (!eligibility.isEligible(msg.sender)) revert NotEligible();
+
+        // Reject an unavailable (zero) blockhash: the seed must anchor to a real
+        // block in [drawBlock+1, drawBlock+256]. With drawWindow <= 255 and the
+        // strict-> guard above this always holds, but fail closed. (Audit fix.)
+        bytes32 bh = blockhash(d.drawBlock);
+        if (bh == bytes32(0)) revert DrawClosed();
+        bytes32 seed = keccak256(abi.encodePacked(bh, disputeId, address(this)));
+
+        uint32 admitted = 0;
+        for (uint256 k = 0; k < weight; k++) {
+            if (d.seatCount >= target) break; // panel over-draw full
+            uint16 slot = uint16(k);
+            if (_slotClaimed[disputeId][msg.sender][slot]) continue; // already claimed this round
+            uint256 vrf = uint256(keccak256(abi.encodePacked(seed, msg.sender, slot)));
+            if (vrf >= config.drawThreshold) continue; // slot did not self-select
+
+            // Lock one slot of stake.
+            staked[msg.sender] -= config.minStake;
+            _slotClaimed[disputeId][msg.sender][slot] = true;
+            _seatsOf[disputeId].push(
+                SeatEntry({
+                    juror: msg.sender,
+                    slot: slot,
+                    role: ROLE_RELEASED,
+                    settled: false,
+                    vrfOutput: vrf,
+                    slotStake: config.minStake
+                })
+            );
+            _jurorRound[disputeId][msg.sender].seatCount += 1;
+            d.seatCount += 1;
+            admitted += 1;
+            emit SeatClaimed(disputeId, msg.sender, slot, vrf);
+            emit SeatGranted(disputeId, msg.sender, d.seatCount);
+        }
+
+        if (admitted == 0) revert NotEligible(); // no slot self-selected / no room
+
+        // Fully over-drawn: advance immediately. Otherwise a permissionless
+        // closeDrawing() crank (after the window) advances a merely-full panel.
+        if (d.seatCount >= target) {
+            d.state = DisputeState.Committing;
+            d.commitDeadline = uint64(block.number) + config.commitBlocks;
+            emit DrawingClosed(disputeId, d.seatCount);
+            emit PhaseAdvanced(disputeId, DisputeState.Committing);
+        }
+    }
+
+    /// @notice Permissionless crank: close the draw window and open commit as long
+    ///         as at least a full primary panel (panelSize seats) was admitted.
+    ///         An UNDER-subscribed draw (< panelSize) is handled by finalize().
+    function closeDrawing(uint256 disputeId) external {
+        Dispute storage d = _disputes[disputeId];
+        if (d.state != DisputeState.Drawing) revert WrongState();
+        if (block.number <= d.drawBlock + config.drawWindowBlocks) revert TooEarly();
+        if (d.seatCount < config.panelSize) revert PanelFull(); // undersubscribed -> finalize()
+        d.state = DisputeState.Committing;
+        d.commitDeadline = uint64(block.number) + config.commitBlocks;
+        emit DrawingClosed(disputeId, d.seatCount);
+        emit PhaseAdvanced(disputeId, DisputeState.Committing);
+    }
+
+    /// @notice Commit a hidden vote: keccak256(disputeId, juror, choice, salt).
+    ///         One commit per juror covers ALL of that juror's admitted seats.
+    ///         Clients MUST use a fresh salt per dispute.
+    function commitVote(uint256 disputeId, bytes32 commitment) external {
+        Dispute storage d = _disputes[disputeId];
+        if (d.state != DisputeState.Committing) revert WrongState();
+        if (block.number > d.commitDeadline) revert DrawClosed();
+        JurorRound storage jr = _jurorRound[disputeId][msg.sender];
+        if (jr.seatCount == 0) revert NotSeated();
+        if (jr.committed) revert AlreadyCommitted();
+        jr.committed = true;
+        jr.commitment = commitment;
+        emit VoteCommitted(disputeId, msg.sender);
+    }
+
+    /// @notice Move Committing -> Revealing after the commit deadline, choosing the
+    ///         seated set: committed primaries stay; primaries that did NOT commit
+    ///         are marked SILENT and their capacity is filled by the lowest-ranked
+    ///         committed alternates (promotion) so absentees can't break quorum.
+    function openReveal(uint256 disputeId) external {
+        Dispute storage d = _disputes[disputeId];
+        if (d.state != DisputeState.Committing) revert WrongState();
+        if (block.number <= d.commitDeadline) revert TooEarly();
+
+        _seatPanel(disputeId, d);
+
+        d.state = DisputeState.Revealing;
+        d.revealDeadline = uint64(block.number) + config.revealBlocks;
+        emit PanelSeated(disputeId, d.seatedWeight);
+        emit PhaseAdvanced(disputeId, DisputeState.Revealing);
+    }
+
+    /// @notice Reveal a committed vote. Adds the juror's SEATED-seat weight to the
+    ///         tally in one shot (k-slot weighting).
+    function revealVote(uint256 disputeId, uint8 choice, bytes32 salt) external {
+        Dispute storage d = _disputes[disputeId];
+        if (d.state != DisputeState.Revealing) revert WrongState();
+        if (block.number > d.revealDeadline) revert DrawClosed();
+        if (choice == 0 || choice > d.choices) revert BadChoice();
+        JurorRound storage jr = _jurorRound[disputeId][msg.sender];
+        if (jr.dutySeats == 0) revert NotSeated(); // not on the seated panel
+        if (jr.revealed) revert BadReveal();
+        if (keccak256(abi.encodePacked(disputeId, msg.sender, choice, salt)) != jr.commitment) revert BadReveal();
+
+        jr.revealed = true;
+        jr.choice = choice;
+        _votes[disputeId][choice] += jr.dutySeats;
+        d.revealedCount += jr.dutySeats;
+        emit VoteRevealed(disputeId, msg.sender, choice, jr.dutySeats);
+    }
+
+    /// @notice Tally + settle a dispute. Callable by anyone once terminal-eligible.
+    ///          - undersubscribed draw (panel never reached panelSize) -> refund, ruling 0
+    ///          - normal reveal deadline reached                        -> tally + settle
+    function finalize(uint256 disputeId) external noReentrant {
+        Dispute storage d = _disputes[disputeId];
+
+        if (d.state == DisputeState.Drawing) {
+            if (block.number <= d.drawBlock + config.drawWindowBlocks) revert TooEarly();
+            // A full-enough panel must be advanced via closeDrawing(), not refunded.
+            if (d.seatCount >= config.panelSize) revert WrongState();
+            // Undersubscribed: return seated stakes, refund the app, refuse to rule.
+            _returnSeatedStakes(disputeId);
+            withdrawable[d.app] += d.feePot;
+            _resolve(disputeId, d, 0, false);
+            return;
+        }
+
+        if (d.state != DisputeState.Revealing) revert WrongState();
+        if (block.number <= d.revealDeadline) revert TooEarly();
+
+        (uint8 ruling, bool tied) = _tally(disputeId, d);
+        _settle(disputeId, d, ruling);
+        _resolve(disputeId, d, ruling, tied);
+    }
+
+    /// @notice Re-attempt ruling delivery if the app's callback previously failed.
+    /// @dev noReentrant: a malicious app rule() must not re-enter and get the
+    ///      ruling delivered twice (IArbitrable is "called once"). (Audit fix.)
+    function redeliverRuling(uint256 disputeId) external noReentrant {
+        Dispute storage d = _disputes[disputeId];
+        if (d.state != DisputeState.Resolved || d.ruled) revert WrongState();
+        _deliver(disputeId, d);
+    }
+
+    function withdraw() external noReentrant {
+        uint256 amount = withdrawable[msg.sender];
+        if (amount == 0) revert NothingToWithdraw();
+        withdrawable[msg.sender] = 0;
+        _pay(msg.sender, amount);
+        emit Withdrawn(msg.sender, amount);
+    }
+
+    // ----------------------------------------------------------- internals
+    /// @dev Rank admitted seats by ascending vrfOutput (lower keccak = higher
+    ///      priority). Ranks 0..panelSize-1 are primaries, the rest alternates.
+    ///      Committed primaries are SEATED; uncommitted primaries are SILENT; then
+    ///      the lowest-ranked committed alternates are promoted to SEATED to refill
+    ///      the panel up to panelSize. Everything else is RELEASED (unslashed).
+    function _seatPanel(uint256 disputeId, Dispute storage d) private {
+        SeatEntry[] storage seats = _seatsOf[disputeId];
+        uint256 n = seats.length;
+        if (n == 0) return;
+
+        // Rank by ascending vrfOutput via an index array (insertion sort; n <= 21).
+        uint256[] memory idx = new uint256[](n);
+        for (uint256 i = 0; i < n; i++) idx[i] = i;
+        for (uint256 i = 1; i < n; i++) {
+            uint256 j = i;
+            while (j > 0 && seats[idx[j - 1]].vrfOutput > seats[idx[j]].vrfOutput) {
+                (idx[j - 1], idx[j]) = (idx[j], idx[j - 1]);
+                j--;
+            }
+        }
+
+        uint256 panelSize = config.panelSize;
+        uint32 seated = 0;
+
+        // Pass 1: primaries. Committed -> SEATED; uncommitted -> SILENT (still slashed).
+        for (uint256 r = 0; r < n && r < panelSize; r++) {
+            SeatEntry storage s = seats[idx[r]];
+            if (_jurorRound[disputeId][s.juror].committed) {
+                s.role = ROLE_SEATED;
+                _jurorRound[disputeId][s.juror].dutySeats += 1;
+                seated += 1;
+            } else {
+                s.role = ROLE_SILENT;
+            }
+        }
+
+        // Pass 2: promote lowest-ranked committed alternates until the panel is full.
+        for (uint256 r = panelSize; r < n && seated < panelSize; r++) {
+            SeatEntry storage s = seats[idx[r]];
+            if (_jurorRound[disputeId][s.juror].committed) {
+                s.role = ROLE_SEATED;
+                _jurorRound[disputeId][s.juror].dutySeats += 1;
+                seated += 1;
+            }
+            // else stays ROLE_RELEASED
+        }
+
+        d.seatedWeight = seated;
+    }
+
+    function _tally(uint256 disputeId, Dispute storage d) private view returns (uint8 ruling, bool tied) {
+        uint32 best = 0;
+        for (uint8 c = 1; c <= d.choices; c++) {
+            uint32 v = _votes[disputeId][c];
+            if (v > best) {
+                best = v;
+                ruling = c;
+                tied = false;
+            } else if (v == best && v != 0) {
+                tied = true;
+            }
+        }
+        // Quorum: enough of the panel weight revealed, else refuse (ruling 0).
+        uint256 need = (uint256(config.panelSize) * config.quorumBps + BPS - 1) / BPS;
+        if (d.revealedCount < need || tied || best == 0) {
+            return (0, tied);
+        }
+        return (ruling, false);
+    }
+
+    /// @dev Settlement waterfall. `ruling == 0` means NO verdict carried — a genuine
+    ///      tie, a quorum failure, or nobody revealed. FR-ST-02/FR-ST-03 require that
+    ///      outcome to punish only SILENCE, never a juror who showed up and voted, so
+    ///      the payout predicate is "revealed AND (no verdict carried OR voted with
+    ///      the verdict)". Per seat:
+    ///        ROLE_RELEASED                  -> full slot stake back, no fee
+    ///        revealed, ruling == 0          -> full stake + jurorFee + pot share
+    ///        revealed, choice == ruling     -> full stake + jurorFee + pot share
+    ///        revealed, choice != ruling     -> beta slash (ruling != 0 only)
+    ///        ROLE_SEATED, never revealed    -> gamma slash
+    ///        ROLE_SILENT (never committed)  -> gamma slash
+    ///      A ROLE_SILENT seat can never be `revealed`: the role is only assigned to a
+    ///      juror whose JurorRound.committed is false, and such a juror gets no
+    ///      dutySeats at _seatPanel, so revealVote reverts NotSeated for them. The
+    ///      beta arm is therefore reachable only for a revealed-but-wrong seat under a
+    ///      real verdict, and on a ruling == 0 settlement the pot is gamma slashes only.
+    function _settle(uint256 disputeId, Dispute storage d, uint8 ruling) private {
+        SeatEntry[] storage seats = _seatsOf[disputeId];
+        uint256 n = seats.length;
+        uint256 pot = 0;
+        uint256 rewardedSeats = 0;
+
+        // Pass 1: release unneeded alternates, slash the wrong + the silent into the
+        // pot, count the rewarded (paid in pass 2).
+        for (uint256 i = 0; i < n; i++) {
+            SeatEntry storage s = seats[i];
+            if (s.settled) continue;
+
+            if (s.role == ROLE_RELEASED) {
+                // Alternate never needed: return the full slot stake, no fee.
+                s.settled = true;
+                withdrawable[s.juror] += s.slotStake;
+                continue;
+            }
+
+            JurorRound storage jr = _jurorRound[disputeId][s.juror];
+            // Rewarded = the juror revealed, AND either no verdict carried (tie /
+            // quorum failure — FR-ST-02 forbids slashing them) or they voted with it.
+            bool rewarded = jr.revealed && (ruling == 0 || jr.choice == ruling);
+            if (rewarded) {
+                rewardedSeats += 1; // paid in pass 2
+            } else {
+                // SEATED + revealed-but-wrong => beta (reachable only when ruling != 0;
+                // with ruling == 0 every revealer was rewarded above). Otherwise
+                // (SEATED but silent at reveal, or a SILENT primary that never
+                // committed) => gamma. gamma >= beta guaranteed at deploy.
+                uint16 bps = (s.role == ROLE_SEATED && jr.revealed) ? config.betaBps : config.gammaBps;
+                uint256 slash = (s.slotStake * bps) / BPS;
+                pot += slash;
+                s.settled = true;
+                withdrawable[s.juror] += s.slotStake - slash;
+                emit Slashed(disputeId, s.juror, slash);
+            }
+        }
+
+        // Fee routing (gross-up): protocol take -> treasury, app take -> app; the
+        // remaining prepay covers each rewarded seat's full jurorFee. Same shape
+        // whether or not a verdict carried — a tie still pays its revealers.
+        uint256 cost = d.feePot; // == arbCost
+        uint256 appCut = (cost * config.appFeeBps) / BPS;
+        uint256 protocolCut = (cost * config.protocolFeeBps) / BPS;
+
+        // Distribute the slashed pot: treasury cut, then rewarded seats split the rest.
+        uint256 treasuryCut = (pot * config.thetaBps) / BPS;
+        uint256 toRewarded = pot - treasuryCut;
+
+        if (rewardedSeats > 0) {
+            uint256 share = toRewarded / rewardedSeats;
+            uint256 dust = toRewarded - share * rewardedSeats;
+            for (uint256 i = 0; i < n; i++) {
+                SeatEntry storage s = seats[i];
+                if (s.settled) continue; // remaining unsettled == rewarded
+                s.settled = true;
+                withdrawable[s.juror] += s.slotStake + config.jurorFee + share;
+            }
+            uint256 jurorFeesPaid = rewardedSeats * config.jurorFee;
+            // Residue of the prepay (forfeited fees) refunds to the app.
+            withdrawable[d.app] += appCut + (cost - appCut - protocolCut - jurorFeesPaid);
+            withdrawable[config.treasury] += protocolCut + treasuryCut + dust;
+        } else {
+            // NOBODY revealed (so nobody earned a fee — note this is no longer the
+            // tie/quorum-failure case, which pays its revealers above): refund the
+            // prepay less the protocol take to the app, slashed pot to treasury.
+            withdrawable[d.app] += cost - protocolCut;
+            withdrawable[config.treasury] += protocolCut + pot;
+        }
+    }
+
+    function _returnSeatedStakes(uint256 disputeId) private {
+        SeatEntry[] storage seats = _seatsOf[disputeId];
+        for (uint256 i = 0; i < seats.length; i++) {
+            SeatEntry storage s = seats[i];
+            if (s.settled) continue;
+            s.settled = true;
+            withdrawable[s.juror] += s.slotStake;
+        }
+    }
+
+    function _resolve(uint256 disputeId, Dispute storage d, uint8 ruling, bool tied) private {
+        d.ruling = ruling;
+        d.tied = tied;
+        d.state = DisputeState.Resolved;
+        emit DisputeResolved(disputeId, ruling, tied);
+        _deliver(disputeId, d);
+    }
+
+    function _deliver(uint256 disputeId, Dispute storage d) private {
+        // Ruling delivery must NEVER brick the protocol. A low-level call cannot
+        // revert into this frame regardless of the callee: a reverting rule(), an
+        // out-of-gas callee, or an app self-destructed after creation (code.length
+        // now 0) all resolve to ok == false here instead of bubbling a revert the
+        // way solc's `try/catch` would for a codeless target. On failure the ruling
+        // stays pending and can be pulled later via redeliverRuling().
+        (bool ok, ) = d.app.call(abi.encodeCall(IArbitrable.rule, (disputeId, d.ruling)));
+        if (ok) {
+            d.ruled = true;
+            emit RulingDelivered(disputeId, d.ruling);
+        } else {
+            emit RulingDeliveryFailed(disputeId);
+        }
+    }
+
+    function _pay(address to, uint256 amount) private {
+        (bool ok, ) = payable(to).call{value: amount}("");
+        if (!ok) revert TransferFailed();
+    }
+
+    // ------------------------------------------------------------ views (IArbitrator)
+    function currentRuling(uint256 disputeId) external view returns (uint256 ruling, bool tied, bool finalized) {
+        Dispute storage d = _disputes[disputeId];
+        return (d.ruling, d.tied, d.state == DisputeState.Resolved);
+    }
+
+    function disputeState(uint256 disputeId) external view returns (uint8) {
+        return uint8(_disputes[disputeId].state);
+    }
+
+    function getDispute(uint256 disputeId) external view returns (Dispute memory) {
+        return _disputes[disputeId];
+    }
+
+    /// @notice Distinct jurors currently holding at least one seat, in claim order.
+    function getPanel(uint256 disputeId) external view returns (address[] memory jurors) {
+        SeatEntry[] storage seats = _seatsOf[disputeId];
+        uint256 n = seats.length;
+        address[] memory tmp = new address[](n);
+        uint256 count = 0;
+        for (uint256 i = 0; i < n; i++) {
+            address j = seats[i].juror;
+            bool seen = false;
+            for (uint256 m = 0; m < count; m++) {
+                if (tmp[m] == j) {
+                    seen = true;
+                    break;
+                }
+            }
+            if (!seen) tmp[count++] = j;
+        }
+        jurors = new address[](count);
+        for (uint256 i = 0; i < count; i++) jurors[i] = tmp[i];
+    }
+
+    /// @notice Every admitted seat (a juror may appear multiple times under k-slots).
+    function getSeats(uint256 disputeId) external view returns (SeatEntry[] memory) {
+        return _seatsOf[disputeId];
+    }
+
+    /// @notice Per-juror aggregate for a dispute (commit/reveal + seat counts).
+    function jurorRoundOf(uint256 disputeId, address juror) external view returns (JurorRound memory) {
+        return _jurorRound[disputeId][juror];
+    }
+
+    /// @notice Compute the sortition seed for a dispute (for the juror daemon).
+    function drawSeed(uint256 disputeId) external view returns (bytes32) {
+        Dispute storage d = _disputes[disputeId];
+        return keccak256(abi.encodePacked(blockhash(d.drawBlock), disputeId, address(this)));
+    }
+
+    receive() external payable {
+        revert("use stake()");
+    }
+}

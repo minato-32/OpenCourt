@@ -1,0 +1,74 @@
+{
+  "chain": "Paseo Asset Hub Next",
+  "wss": "wss://paseo-asset-hub-next-rpc.polkadot.io",
+  "genesis": "0x4349b00e54897e21196fd331015fc5be0f14e118beb0375ed2bb1793737bb57a",
+  "vm": "PolkaVM (pallet-revive)",
+  "blockTimeSeconds": 2,
+  "compiler": {
+    "solc": "0.8.28",
+    "resolc": "0.6.0+commit.81ce306.llvm-18.1.8",
+    "viaIR": true,
+    "optimizerRuns": 200
+  },
+  "deployer": {
+    "ss58": "5DHqphCvNc712HXCJ3yqxFXwb4QCMfftauXfEr48GsHNLo9B",
+    "h160": "0xf13f53d45c6733cdF51F993828375dd7364fbdc3",
+    "note": "H160 = keccak(accountId32)[12:] via the pallet-revive AccountId32Mapper fallback. Also the court treasury."
+  },
+  "current": {
+    "note": "Canonical court from scripts/deploy.ts, deployed with the corrected 1e18 contract-side denomination.",
+    "StakeWeightedEligibility": "0xe32d6bdc699d367867c4c882d0f339a71e07ee56",
+    "ArbitratorCore": "0xd4594022d6a1344b8b5b9a603132ba471e4e7db8",
+    "SimpleEscrow": "0x40c58fb8633d4cd85fcb6b2ad989d0622554006e",
+    "verifiedOnChain": {
+      "minStake": "100 PAS",
+      "jurorFee": "10 PAS",
+      "arbitrationCost": "30 PAS",
+      "panelSize": 3,
+      "drawTarget": 5,
+      "drawWindowBlocks": 50,
+      "commitBlocks": 50,
+      "revealBlocks": 50,
+      "betaBps": 1000,
+      "gammaBps": 2500,
+      "thetaBps": 2000,
+      "quorumBps": 5000,
+      "qStar": 0.4167
+    }
+  },
+  "feature1LiveProof": {
+    "note": "scripts/demo-feature1-live.ts — a genuine 1-1 tie with one silent juror, run end to end on chain. Court used short phase windows so the cycle fits in minutes.",
+    "ArbitratorCore": "0x6968b0ec3aee7b64264bea741c8e433a7dbb7705",
+    "SimpleEscrow": "0x1677a8fb11d3af34888e0f517ebb28e2bd83007f",
+    "StakeWeightedEligibility": "0xcc20f20434b91c3a5ffe74c503783b176b847fd0",
+    "result": {
+      "ruling": 0,
+      "tied": true,
+      "slashedEvents": 1,
+      "juror1_revealed": "120 PAS (100 stake + 10 fee + 10 pot share), not slashed",
+      "juror2_revealed": "120 PAS (100 stake + 10 fee + 10 pot share), not slashed",
+      "juror3_silent": "75 PAS (gamma 25% slash)",
+      "appFeeResidue": "10 PAS",
+      "treasury": "5 PAS",
+      "preFixBehaviour": "each revealer would have received 90 PAS (a 10% beta slash for voting)"
+    },
+    "qStarGuard": "the spec's underpaid court (panel 7, jurorFee 3, beta 2000bps -> q* 0.68) is rejected on chain with BadConfig(\"jurorsUnderpaid\")"
+  },
+  "supersededDeploys": [
+    {
+      "reason": "court config was written in planck, but pallet-revive presents value to the contract in 1e18 EVM decimals, so a '100 PAS' minStake was worth 0.000001 PAS",
+      "ArbitratorCore": "0xe28697764f7fcbe0bd4b847db31ecf529969aa70",
+      "SimpleEscrow": "0x47ff58109b92d10ac2a68b7469e64d156b5cc134",
+      "StakeWeightedEligibility": "0x060f70da9a5c06bff9f0578894306f58cc23a745"
+    }
+  ],
+  "chainLevelFindings": [
+    "Revive.instantiate_with_code / Revive.call take `weight_limit`, not `gas_limit`.",
+    "Constructor args go in `data`; `code` must be the untouched PolkaVM blob. Appending args to the blob makes the runtime reject the deploy with Revive::CodeRejected.",
+    "Contract-side value uses EVM decimals (1e18) while extrinsic value uses planck (1e10). Divide a contract-side amount by 1e8 to get the planck to transfer.",
+    "ReviveApi.upload_code accepted the 126,233-byte ArbitratorCore blob (deposit 16.6 PAS), so blob size was never the constraint.",
+    "ReviveApi.balance returns a U256 as four little-endian u64 limbs, not a bigint.",
+    "A contract revert arrives as a SUCCESSFUL dispatch whose return flags have bit 0 set; the payload is the custom-error selector.",
+    "Block time is ~2s, and signAndSubmit waits for finalization (~12 blocks per extrinsic), so phase windows must be sized in blocks accordingly."
+  ]
+}
