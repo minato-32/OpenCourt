@@ -8,7 +8,7 @@ import { mine } from '@nomicfoundation/hardhat-network-helpers';
 
 type Cfg = {
   minStake: bigint; jurorFee: bigint; drawThreshold: bigint;
-  activationDelayBlocks: bigint; drawDelayBlocks: bigint; drawWindowBlocks: bigint;
+  evidenceBlocks: bigint; activationDelayBlocks: bigint; drawDelayBlocks: bigint; drawWindowBlocks: bigint;
   commitBlocks: bigint; revealBlocks: bigint; panelSize: bigint;
   betaBps: bigint; gammaBps: bigint; thetaBps: bigint; quorumBps: bigint;
   appFeeBps: bigint; protocolFeeBps: bigint; treasury: string;
@@ -17,7 +17,7 @@ type Cfg = {
 function courtCfg(treasury: string, panelSize: bigint): Cfg {
   return {
     minStake: 100n, jurorFee: 10n, drawThreshold: ethers.MaxUint256,
-    activationDelayBlocks: 0n, drawDelayBlocks: 1n, drawWindowBlocks: 100n,
+    evidenceBlocks: 5n, activationDelayBlocks: 0n, drawDelayBlocks: 1n, drawWindowBlocks: 100n,
     commitBlocks: 100n, revealBlocks: 100n, panelSize,
     betaBps: 1000n, gammaBps: 2500n, thetaBps: 2000n, quorumBps: 5000n,
     appFeeBps: 0n, protocolFeeBps: 0n, treasury,
@@ -28,6 +28,8 @@ function courtCfg(treasury: string, panelSize: bigint): Cfg {
 // (the commitment binds to it, not the coordinator id).
 async function runRound(court: any, courtDisputeId: bigint, jurors: any[], choice: number) {
   for (const j of jurors) await (await court.connect(j).stake({ value: 100n })).wait();
+  await mine(6);
+  await (await court.openDrawing(courtDisputeId)).wait();
   await mine(2);
   for (const j of jurors) await (await court.connect(j).claimSeat(courtDisputeId)).wait();
   await mine(101);

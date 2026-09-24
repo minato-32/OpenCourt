@@ -17,7 +17,7 @@ describe('ArbitratorCore — full resolution loop', () => {
       minStake: 100n,
       jurorFee: 10n,
       drawThreshold: ethers.MaxUint256, // everyone self-selects (test only)
-      activationDelayBlocks: 0n,
+      evidenceBlocks: 5n, activationDelayBlocks: 0n,
       drawDelayBlocks: 1n,
       drawWindowBlocks: 100n,
       commitBlocks: 100n,
@@ -64,19 +64,22 @@ describe('ArbitratorCore — full resolution loop', () => {
     expect(cost).to.equal(30n);
     await (await escrow.connect(payer).dispute(escrowId, { value: cost })).wait();
     const disputeId = 1n;
-    expect(await core.disputeState(disputeId)).to.equal(1); // Drawing
+    expect(await core.disputeState(disputeId)).to.equal(1); // Evidence: the record is still open
 
-    // 4. Reach the draw block, then all jurors claim a seat.
+    // 4. Close the record, open the draw, then all jurors claim a seat.
+    await mine(6);
+    await (await core.openDrawing(disputeId)).wait();
+    expect(await core.disputeState(disputeId)).to.equal(2); // Drawing
     await mine(2);
     for (const j of jurors) {
       await (await core.connect(j).claimSeat(disputeId)).wait();
     }
     // Panel == panelSize but < drawTarget (over-draw ceil(1.4*3)=5), so the draw
     // does not auto-close: crank closeDrawing once the claim window lapses.
-    expect(await core.disputeState(disputeId)).to.equal(1); // still Drawing
+    expect(await core.disputeState(disputeId)).to.equal(2); // still Drawing
     await mine(101);
     await (await core.closeDrawing(disputeId)).wait();
-    expect(await core.disputeState(disputeId)).to.equal(2); // Committing
+    expect(await core.disputeState(disputeId)).to.equal(3); // Committing
 
     // 5. Commit — all vote choice 1 (RELEASE to payee).
     const choice = 1;
@@ -94,7 +97,7 @@ describe('ArbitratorCore — full resolution loop', () => {
     // 6. Advance to reveal, reveal all votes.
     await mine(101);
     await (await core.openReveal(disputeId)).wait();
-    expect(await core.disputeState(disputeId)).to.equal(3); // Revealing
+    expect(await core.disputeState(disputeId)).to.equal(4); // Revealing
     for (const j of jurors) {
       await (await core.connect(j).revealVote(disputeId, choice, salts[j.address])).wait();
     }
@@ -103,7 +106,7 @@ describe('ArbitratorCore — full resolution loop', () => {
     await mine(101);
     await (await core.finalize(disputeId)).wait();
 
-    expect(await core.disputeState(disputeId)).to.equal(4); // Resolved
+    expect(await core.disputeState(disputeId)).to.equal(5); // Resolved
     const [ruling, tied, finalized] = await core.currentRuling(disputeId);
     expect(ruling).to.equal(1n);
     expect(tied).to.equal(false);
@@ -134,7 +137,10 @@ describe('ArbitratorCore — full resolution loop', () => {
     const cost = await core.arbitrationCost('0x');
     await (await escrow.connect(payer).dispute(1n, { value: cost })).wait();
 
-    // Nobody stakes / claims. Let the draw window lapse, then finalize.
+    // Nobody stakes or claims. Both phase transitions are permissionless cranks, so an abandoned
+    // dispute is never stuck: close the record, let the draw window lapse, then finalize.
+    await mine(6);
+    await (await core.openDrawing(1n)).wait();
     await mine(120);
     await (await core.finalize(1n)).wait();
 

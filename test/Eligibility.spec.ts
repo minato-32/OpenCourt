@@ -8,7 +8,7 @@ import { ethers } from 'hardhat';
 function cfg(treasury: string) {
   return {
     minStake: 100n, jurorFee: 10n, drawThreshold: ethers.MaxUint256,
-    activationDelayBlocks: 0n, drawDelayBlocks: 1n, drawWindowBlocks: 100n,
+    evidenceBlocks: 5n, activationDelayBlocks: 0n, drawDelayBlocks: 1n, drawWindowBlocks: 100n,
     commitBlocks: 100n, revealBlocks: 100n, panelSize: 3n,
     betaBps: 1000n, gammaBps: 2500n, thetaBps: 2000n, quorumBps: 5000n,
     appFeeBps: 0n, protocolFeeBps: 0n, treasury,
@@ -74,6 +74,8 @@ describe('Eligibility — fails closed (FR-EL-02)', () => {
       const app = (await App.deploy(await core.getAddress())) as any;
       await app.waitForDeployment();
       await (await app.createDispute(2, { value: await core.arbitrationCost('0x') })).wait();
+      await ethers.provider.send('hardhat_mine', ['0x6']);
+      await (await core.openDrawing(1n)).wait();
       await ethers.provider.send('hardhat_mine', ['0x2']);
       await expect(core.connect(juror).claimSeat(1n)).to.be.revertedWithCustomError(core, 'NotEligible');
 

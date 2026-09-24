@@ -46,6 +46,7 @@ contract ArbitratorCore is IArbitrator {
         uint256 minStake; // stake locked per seat (one slot)
         uint256 jurorFee; // fee paid to each rewarded seat (from the app's prepay)
         uint256 drawThreshold; // keccak(seed,juror,slot) must be below this to self-select
+        uint64 evidenceBlocks; // FR-DL-02: how long the record stays open, before any draw
         uint64 activationDelayBlocks; // anti just-in-time staking
         uint64 drawDelayBlocks; // Δ before the draw opens (future-blockhash seed)
         uint64 drawWindowBlocks; // window to collect seat claims
@@ -63,10 +64,11 @@ contract ArbitratorCore is IArbitrator {
 
     enum DisputeState {
         None, // 0
-        Drawing, // 1
-        Committing, // 2
-        Revealing, // 3
-        Resolved // 4 (tallied, settled; ruling may still be pending delivery)
+        Evidence, // 1 — parties argue; the record is still open
+        Drawing, // 2 — record frozen, panel forming
+        Committing, // 3
+        Revealing, // 4
+        Resolved // 5 (tallied, settled; ruling may still be pending delivery)
     }
 
     // Seat role, fixed at the commit->reveal transition (openReveal).
@@ -133,6 +135,7 @@ contract ArbitratorCore is IArbitrator {
         bool tied;
         bool ruled; // ruling delivered to the app
         DisputeState state;
+        uint64 evidenceDeadline;
         uint64 drawBlock;
         uint64 commitDeadline;
         uint64 revealDeadline;
@@ -188,6 +191,8 @@ contract ArbitratorCore is IArbitrator {
     /// @notice Evidence pointer for a dispute. Event-only: the core stores NOTHING;
     ///         the log IS the evidence record (an app/indexer reconstructs it).
     event EvidenceSubmitted(uint256 indexed disputeId, address indexed submitter, string cid);
+    /// @notice The record is frozen; from here the panel judges exactly these pointers.
+    event EvidenceClosed(uint256 indexed disputeId, uint32 evidenceCount);
 
     // ------------------------------------------------------------------ errors
     error BadConfig(string what);
@@ -219,6 +224,9 @@ contract ArbitratorCore is IArbitrator {
         if (cfg.drawThreshold == 0) revert BadConfig("drawThreshold");
         // drawDelay >= 1 (a real gap before the seed's blockhash) and window <= 255
         // so every claimable block has a live blockhash. (Audit HIGH fix.)
+        // A zero evidence window would freeze the record in the block the dispute opens, before
+        // either party could file anything.
+        if (cfg.evidenceBlocks == 0) revert BadConfig("evidenceBlocks");
         if (cfg.drawDelayBlocks == 0) revert BadConfig("drawDelay");
         if (cfg.drawWindowBlocks == 0 || cfg.drawWindowBlocks > 255) revert BadConfig("drawWindow");
         // A zero commit or reveal window would close the phase in the same block it
@@ -355,10 +363,9 @@ contract ArbitratorCore is IArbitrator {
         bytes32 contentHash,
         uint32 sizeBytes
     ) external {
-        DisputeState st = _disputes[disputeId].state;
-        if (st != DisputeState.Drawing && st != DisputeState.Committing && st != DisputeState.Revealing) {
-            revert WrongState();
-        }
+        // FR-DL-02: the record closes before the panel forms, so every juror judges the same set
+        // of evidence. Nothing can be added once a seat has been claimed.
+        if (_disputes[disputeId].state != DisputeState.Evidence) revert WrongState();
         if (bytes(cid).length == 0 || bytes(cid).length > MAX_URI_BYTES) revert BadEvidence();
         if (_evidenceCount[disputeId][msg.sender] >= MAX_EVIDENCE_PER_SUBMITTER) revert EvidenceCapReached();
 
@@ -426,8 +433,8 @@ contract ArbitratorCore is IArbitrator {
         Dispute storage d = _disputes[disputeId];
         d.app = msg.sender;
         d.choices = choices;
-        d.state = DisputeState.Drawing;
-        d.drawBlock = uint64(block.number) + config.drawDelayBlocks;
+        d.state = DisputeState.Evidence;
+        d.evidenceDeadline = uint64(block.number) + config.evidenceBlocks;
         d.feePot = msg.value;
         d.configHash = configHash;
 
@@ -441,12 +448,26 @@ contract ArbitratorCore is IArbitrator {
             }
         }
 
-        emit DisputeCreated(disputeId, msg.sender, choices, d.drawBlock);
+        emit DisputeCreated(disputeId, msg.sender, choices, d.evidenceDeadline);
     }
 
     /// @notice Whether `who` is barred from this dispute's panel.
     function isExcluded(uint256 disputeId, address who) external view returns (bool) {
         return _excluded[disputeId][who] || who == _disputes[disputeId].app;
+    }
+
+    /// @notice Freeze the evidence record and open the draw. Permissionless crank.
+    /// @dev The draw block is set HERE, not at creation: the sortition seed must anchor to a block
+    ///      nobody could predict while the record was still being written.
+    function openDrawing(uint256 disputeId) external {
+        Dispute storage d = _disputes[disputeId];
+        if (d.state != DisputeState.Evidence) revert WrongState();
+        if (block.number <= d.evidenceDeadline) revert TooEarly();
+
+        d.state = DisputeState.Drawing;
+        d.drawBlock = uint64(block.number) + config.drawDelayBlocks;
+        emit EvidenceClosed(disputeId, uint32(_evidenceOf[disputeId].length));
+        emit PhaseAdvanced(disputeId, DisputeState.Drawing);
     }
 
     /// @notice Claim jury seats once the draw is open. A juror claims EVERY one of

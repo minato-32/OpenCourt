@@ -11,6 +11,7 @@ type Cfg = {
   minStake: bigint;
   jurorFee: bigint;
   drawThreshold: bigint;
+  evidenceBlocks: bigint;
   activationDelayBlocks: bigint;
   drawDelayBlocks: bigint;
   drawWindowBlocks: bigint;
@@ -31,7 +32,7 @@ function baseCfg(treasury: string, over: Partial<Cfg> = {}): Cfg {
     minStake: 100n,
     jurorFee: 10n,
     drawThreshold: ethers.MaxUint256, // everyone self-selects (test only)
-    activationDelayBlocks: 0n,
+    evidenceBlocks: 5n, activationDelayBlocks: 0n,
     drawDelayBlocks: 1n,
     drawWindowBlocks: 100n,
     commitBlocks: 100n,
@@ -155,11 +156,13 @@ describe('Phase-2 — alternates promotion', () => {
 
     // Reach the draw, all five claim -> panel over-drawn to drawTarget. The draw still runs its
     // full window, because a lower vrf output arriving late must be able to displace a seat.
+    await mine(6);
+    await (await core.openDrawing(disputeId)).wait();
     await mine(2);
     for (const j of jurors) await (await core.connect(j).claimSeat(disputeId)).wait();
     await mine(101);
     await (await core.closeDrawing(disputeId)).wait();
-    expect(await core.disputeState(disputeId)).to.equal(2); // Committing
+    expect(await core.disputeState(disputeId)).to.equal(3); // Committing
 
     // Reconstruct the sortition ranking off-chain (lowest keccak = higher priority).
     const seed = await core.drawSeed(disputeId);
@@ -220,6 +223,8 @@ describe('Phase-2 — k-slot weighting', () => {
     await (await escrow.connect(payer).dispute(1n, { value: cost })).wait();
     const disputeId = 1n;
 
+    await mine(6);
+    await (await core.openDrawing(disputeId)).wait();
     await mine(2);
     await (await core.connect(whale).claimSeat(disputeId)).wait();
     expect((await core.getSeats(disputeId)).length).to.equal(3); // 3 independent slots
@@ -227,7 +232,7 @@ describe('Phase-2 — k-slot weighting', () => {
     // panelSize(3) <= seats(3) < drawTarget(5): needs the closeDrawing crank.
     await mine(101);
     await (await core.closeDrawing(disputeId)).wait();
-    expect(await core.disputeState(disputeId)).to.equal(2);
+    expect(await core.disputeState(disputeId)).to.equal(3);
 
     const salt = ethers.hexlify(ethers.randomBytes(32));
     await (await core.connect(whale).commitVote(disputeId, commitmentOf(disputeId, whale.address, 1, salt))).wait();
@@ -269,6 +274,8 @@ describe('Phase-2 — gross-up fees', () => {
     await (await escrow.connect(payer).dispute(1n, { value: cost })).wait();
     const disputeId = 1n;
 
+    await mine(6);
+    await (await core.openDrawing(disputeId)).wait();
     await mine(2);
     for (const j of jurors) await (await core.connect(j).claimSeat(disputeId)).wait();
     await mine(101);

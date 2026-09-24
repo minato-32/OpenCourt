@@ -24,7 +24,7 @@ import { assertConservation } from './helpers';
 
 type Cfg = {
   minStake: bigint; jurorFee: bigint; drawThreshold: bigint;
-  activationDelayBlocks: bigint; drawDelayBlocks: bigint; drawWindowBlocks: bigint;
+  evidenceBlocks: bigint; activationDelayBlocks: bigint; drawDelayBlocks: bigint; drawWindowBlocks: bigint;
   commitBlocks: bigint; revealBlocks: bigint; panelSize: bigint;
   betaBps: bigint; gammaBps: bigint; thetaBps: bigint; quorumBps: bigint;
   appFeeBps: bigint; protocolFeeBps: bigint; treasury: string;
@@ -33,7 +33,7 @@ type Cfg = {
 function baseCfg(treasury: string, over: Partial<Cfg> = {}): Cfg {
   return {
     minStake: 100n, jurorFee: 10n, drawThreshold: ethers.MaxUint256,
-    activationDelayBlocks: 0n, drawDelayBlocks: 1n, drawWindowBlocks: 100n,
+    evidenceBlocks: 5n, activationDelayBlocks: 0n, drawDelayBlocks: 1n, drawWindowBlocks: 100n,
     commitBlocks: 100n, revealBlocks: 100n, panelSize: 3n,
     betaBps: 1000n, gammaBps: 2500n, thetaBps: 2000n, quorumBps: 5000n,
     appFeeBps: 0n, protocolFeeBps: 0n, treasury, ...over,
@@ -105,6 +105,8 @@ describe('FR-ST-02 — genuine tie, every seated juror revealed', () => {
     const { core, app, jurors, cost, disputeId } = await openDispute(cfg, 5, 3);
     expect(cost).to.equal(50n); // 5 seats * fee 10, no take
 
+    await mine(6);
+    await (await core.openDrawing(disputeId)).wait();
     await mine(2);
     for (const j of jurors) await (await core.connect(j).claimSeat(disputeId)).wait();
     await mine(101);
@@ -139,7 +141,7 @@ describe('FR-ST-02 — genuine tie, every seated juror revealed', () => {
     expect(ruling).to.equal(0n); // no verdict carried
     expect(tied).to.equal(true); // ...because of a genuine tie
     expect(finalized).to.equal(true);
-    expect(await core.disputeState(disputeId)).to.equal(4); // Resolved
+    expect(await core.disputeState(disputeId)).to.equal(5); // Resolved
 
     // Every revealer: stake 100 back + jurorFee 10. pot = 0 (nothing was slashed),
     // so the pot share is 0 — the fee alone is the reward for showing up.
@@ -173,11 +175,13 @@ describe('FR-ST-02 — genuine tie, every seated juror revealed', () => {
     const { core, app, jurors, cost, disputeId } = await openDispute(cfg, 5, 5);
     expect(cost).to.equal(30n); // panel 3 * fee 10
 
+    await mine(6);
+    await (await core.openDrawing(disputeId)).wait();
     await mine(2);
     for (const j of jurors) await (await core.connect(j).claimSeat(disputeId)).wait();
     await mine(101);
     await (await core.closeDrawing(disputeId)).wait();
-    expect(await core.disputeState(disputeId)).to.equal(2); // Committing
+    expect(await core.disputeState(disputeId)).to.equal(3); // Committing
 
     // All five commit, each to a DISTINCT choice, so whichever three the sortition
     // ranks as primaries reveal three different choices -> a guaranteed tie.
@@ -247,6 +251,8 @@ describe('FR-ST-02 — quorum failure with mixed behaviour', () => {
     const { core, app, jurors, cost, disputeId } = await openDispute(cfg, 5, 2);
     expect(cost).to.equal(50n);
 
+    await mine(6);
+    await (await core.openDrawing(disputeId)).wait();
     await mine(2);
     for (const j of jurors) await (await core.connect(j).claimSeat(disputeId)).wait();
     await mine(101);
@@ -305,6 +311,8 @@ describe('FR-ST-02 — quorum failure with mixed behaviour', () => {
     const cfg = baseCfg(treasury.address, { panelSize: 5n });
     const { core, app, jurors, disputeId } = await openDispute(cfg, 5, 2);
 
+    await mine(6);
+    await (await core.openDrawing(disputeId)).wait();
     await mine(2);
     for (const j of jurors) await (await core.connect(j).claimSeat(disputeId)).wait();
     await mine(101);
@@ -377,6 +385,8 @@ describe('FR-ST-02 — nobody reveals (zero rewarded seats)', () => {
     const { core, app, jurors, cost, disputeId } = await openDispute(cfg, 3, 2);
     expect(cost).to.equal(34n);
 
+    await mine(6);
+    await (await core.openDrawing(disputeId)).wait();
     await mine(2);
     for (const j of jurors) await (await core.connect(j).claimSeat(disputeId)).wait();
     await mine(101);
@@ -420,6 +430,8 @@ describe('FR-ST-02 — nobody reveals (zero rewarded seats)', () => {
     const { core, app, jurors, cost, disputeId } = await openDispute(cfg, 3, 2);
     expect(cost).to.equal(30n);
 
+    await mine(6);
+    await (await core.openDrawing(disputeId)).wait();
     await mine(2);
     for (const j of jurors) await (await core.connect(j).claimSeat(disputeId)).wait();
     await mine(101);
@@ -435,7 +447,7 @@ describe('FR-ST-02 — nobody reveals (zero rewarded seats)', () => {
     const slashes = await slashesOf(core, await core.finalize(disputeId));
     const [ruling] = await core.currentRuling(disputeId);
     expect(ruling).to.equal(0n);
-    expect(await core.disputeState(disputeId)).to.equal(4); // terminal
+    expect(await core.disputeState(disputeId)).to.equal(5); // terminal
 
     expect(slashes.length).to.equal(3);
     for (const s of slashes) expect(s.amount).to.equal(25n);

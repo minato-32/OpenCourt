@@ -8,7 +8,7 @@ import { mine } from '@nomicfoundation/hardhat-network-helpers';
 
 type Cfg = {
   minStake: bigint; jurorFee: bigint; drawThreshold: bigint;
-  activationDelayBlocks: bigint; drawDelayBlocks: bigint; drawWindowBlocks: bigint;
+  evidenceBlocks: bigint; activationDelayBlocks: bigint; drawDelayBlocks: bigint; drawWindowBlocks: bigint;
   commitBlocks: bigint; revealBlocks: bigint; panelSize: bigint;
   betaBps: bigint; gammaBps: bigint; thetaBps: bigint; quorumBps: bigint;
   appFeeBps: bigint; protocolFeeBps: bigint; treasury: string;
@@ -17,7 +17,7 @@ type Cfg = {
 function baseCfg(treasury: string, over: Partial<Cfg> = {}): Cfg {
   return {
     minStake: 100n, jurorFee: 10n, drawThreshold: ethers.MaxUint256,
-    activationDelayBlocks: 0n, drawDelayBlocks: 1n, drawWindowBlocks: 100n,
+    evidenceBlocks: 5n, activationDelayBlocks: 0n, drawDelayBlocks: 1n, drawWindowBlocks: 100n,
     commitBlocks: 100n, revealBlocks: 100n, panelSize: 3n,
     betaBps: 1000n, gammaBps: 2500n, thetaBps: 2000n, quorumBps: 5000n,
     appFeeBps: 0n, protocolFeeBps: 0n, treasury, ...over,
@@ -54,6 +54,8 @@ describe('Sortition — lowest vrf wins the seat (FR-SL-04)', () => {
     for (const j of jurors) await (await core.connect(j).stake({ value: 100n })).wait();
     await (await app.createDispute(2, { value: await core.arbitrationCost('0x') })).wait();
     const disputeId = 1n;
+    await mine(6);
+    await (await core.openDrawing(disputeId)).wait();
     await mine(2);
 
     const seed = await core.drawSeed(disputeId);
@@ -92,6 +94,8 @@ describe('Sortition — lowest vrf wins the seat (FR-SL-04)', () => {
     const jurors = rest.slice(0, 6);
     for (const j of jurors) await (await core.connect(j).stake({ value: 100n })).wait();
     await (await app.createDispute(2, { value: await core.arbitrationCost('0x') })).wait();
+    await mine(6);
+    await (await core.openDrawing(1n)).wait();
     await mine(2);
 
     const seed = await core.drawSeed(1n);
@@ -115,17 +119,19 @@ describe('Sortition — lowest vrf wins the seat (FR-SL-04)', () => {
     const jurors = rest.slice(0, 5);
     for (const j of jurors) await (await core.connect(j).stake({ value: 100n })).wait();
     await (await app.createDispute(2, { value: await core.arbitrationCost('0x') })).wait();
+    await mine(6);
+    await (await core.openDrawing(1n)).wait();
     await mine(2);
     for (const j of jurors) await (await core.connect(j).claimSeat(1n)).wait();
 
     // Full, but still Drawing: a better claim must still be able to arrive.
     expect((await core.getSeats(1n)).length).to.equal(5);
-    expect(await core.disputeState(1n)).to.equal(1);
+    expect(await core.disputeState(1n)).to.equal(2);
     await expect(core.closeDrawing(1n)).to.be.revertedWithCustomError(core, 'TooEarly');
 
     await mine(101);
     await (await core.closeDrawing(1n)).wait();
-    expect(await core.disputeState(1n)).to.equal(2);
+    expect(await core.disputeState(1n)).to.equal(3);
   });
 });
 
@@ -141,6 +147,8 @@ describe('Sortition — parties are off their own panel (FR-SL-07)', () => {
     await (await escrow.connect(payer).fund(payee.address, { value: 1000n })).wait();
     await (await escrow.connect(payer).dispute(1n, { value: await core.arbitrationCost('0x') })).wait();
     const disputeId = 1n;
+    await mine(6);
+    await (await core.openDrawing(disputeId)).wait();
 
     // SimpleEscrow declares both parties, so the core knows to bar them.
     expect(await core.isExcluded(disputeId, payer.address)).to.equal(true);

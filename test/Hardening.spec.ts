@@ -10,7 +10,7 @@ import { assertConservation } from './helpers';
 
 type Cfg = {
   minStake: bigint; jurorFee: bigint; drawThreshold: bigint;
-  activationDelayBlocks: bigint; drawDelayBlocks: bigint; drawWindowBlocks: bigint;
+  evidenceBlocks: bigint; activationDelayBlocks: bigint; drawDelayBlocks: bigint; drawWindowBlocks: bigint;
   commitBlocks: bigint; revealBlocks: bigint; panelSize: bigint;
   betaBps: bigint; gammaBps: bigint; thetaBps: bigint; quorumBps: bigint;
   appFeeBps: bigint; protocolFeeBps: bigint; treasury: string;
@@ -19,7 +19,7 @@ type Cfg = {
 function baseCfg(treasury: string, over: Partial<Cfg> = {}): Cfg {
   return {
     minStake: 100n, jurorFee: 10n, drawThreshold: ethers.MaxUint256,
-    activationDelayBlocks: 0n, drawDelayBlocks: 1n, drawWindowBlocks: 100n,
+    evidenceBlocks: 5n, activationDelayBlocks: 0n, drawDelayBlocks: 1n, drawWindowBlocks: 100n,
     commitBlocks: 100n, revealBlocks: 100n, panelSize: 3n,
     betaBps: 1000n, gammaBps: 2500n, thetaBps: 2000n, quorumBps: 5000n,
     appFeeBps: 0n, protocolFeeBps: 0n, treasury, ...over,
@@ -62,6 +62,8 @@ describe('Hardening — beta arm (split vote)', () => {
     await (await app.createDispute(2, { value: cost })).wait();
     const disputeId = 1n;
 
+    await mine(6);
+    await (await core.openDrawing(disputeId)).wait();
     await mine(2);
     for (const j of jurors) await (await core.connect(j).claimSeat(disputeId)).wait();
     await mine(101);
@@ -116,6 +118,8 @@ describe('Hardening — tie / no quorum (1-1-1)', () => {
     await (await app.createDispute(3, { value: cost })).wait(); // 3 choices for a 3-way tie
     const disputeId = 1n;
 
+    await mine(6);
+    await (await core.openDrawing(disputeId)).wait();
     await mine(2);
     for (const j of jurors) await (await core.connect(j).claimSeat(disputeId)).wait();
     await mine(101);
@@ -140,7 +144,7 @@ describe('Hardening — tie / no quorum (1-1-1)', () => {
     const [ruling, tied] = await core.currentRuling(disputeId);
     expect(ruling).to.equal(0n);
     expect(tied).to.equal(true);
-    expect(await core.disputeState(disputeId)).to.equal(4); // Resolved
+    expect(await core.disputeState(disputeId)).to.equal(5); // Resolved
 
     // FR-ST-02: a genuine tie slashes NOBODY who revealed. Every seat that voted is
     // made whole and still paid its jurorFee: 100 + 10. pot = 0 (no silence), so the
@@ -173,6 +177,8 @@ describe('Hardening — tie with a silent seat', () => {
     await (await app.createDispute(3, { value: cost })).wait();
     const disputeId = 1n;
 
+    await mine(6);
+    await (await core.openDrawing(disputeId)).wait();
     await mine(2);
     for (const j of jurors) await (await core.connect(j).claimSeat(disputeId)).wait();
     await mine(101);
@@ -279,6 +285,8 @@ describe('Hardening — PoP gating (presence-only registry)', () => {
     for (const j of [verified, unverified]) await (await core.connect(j).stake({ value: 100n })).wait();
     const cost = await core.arbitrationCost('0x');
     await (await app.createDispute(2, { value: cost })).wait();
+    await mine(6);
+    await (await core.openDrawing(1n)).wait();
     await mine(2);
 
     await expect(core.connect(unverified).claimSeat(1n)).to.be.revertedWithCustomError(core, 'NotEligible');
@@ -309,6 +317,8 @@ describe('Hardening — ruling-delivery terminality', () => {
     await (await app.createDispute(2, { value: cost })).wait();
     const disputeId = 1n;
 
+    await mine(6);
+    await (await core.openDrawing(disputeId)).wait();
     await mine(2);
     for (const j of jurors) await (await core.connect(j).claimSeat(disputeId)).wait();
     await mine(101);
@@ -328,7 +338,7 @@ describe('Hardening — ruling-delivery terminality', () => {
     // finalize resolves + attempts delivery; the reverting rule() surfaces as
     // RulingDeliveryFailed rather than bricking the whole settlement.
     await expect(core.finalize(disputeId)).to.emit(core, 'RulingDeliveryFailed').withArgs(disputeId);
-    expect(await core.disputeState(disputeId)).to.equal(4); // Resolved
+    expect(await core.disputeState(disputeId)).to.equal(5); // Resolved
     const d = await core.getDispute(disputeId);
     expect(d.ruled).to.equal(false); // delivery failed but the dispute is settled
     const [ruling] = await core.currentRuling(disputeId);

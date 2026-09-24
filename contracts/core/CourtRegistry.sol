@@ -67,6 +67,9 @@ contract CourtRegistry {
         if (cfg.minStake == 0) revert BadConfig("minStake");
         if (cfg.jurorFee == 0) revert BadConfig("jurorFee");
         if (cfg.drawThreshold == 0) revert BadConfig("drawThreshold");
+        // A zero evidence window freezes the record in the block the dispute opens, before either
+        // party could file anything.
+        if (cfg.evidenceBlocks == 0) revert BadConfig("evidenceBlocks");
         // Draw timing: a real gap before the seed's blockhash, window <= 255 so every
         // claimable block has a live blockhash. (Previously omitted here — parity bug.)
         if (cfg.drawDelayBlocks == 0) revert BadConfig("drawDelay");
