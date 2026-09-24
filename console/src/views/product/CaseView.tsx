@@ -9,7 +9,9 @@ import {
   getSeats,
   jurorRoundOf,
   noVerdictReason,
+  OUTCOME_LABEL,
   phaseDeadline,
+  ROLE_LABEL,
   quorumNeeded,
   seatOutcome,
   type Dispute,
@@ -54,6 +56,7 @@ export function CaseView({
   const [evidence, setEvidence] = useState<EvidenceItem[]>([]);
   const [seats, setSeats] = useState<Seat[]>([]);
   const [round, setRound] = useState<JurorRound | null>(null);
+  const [rounds, setRounds] = useState<Record<string, JurorRound>>({});
   const [parties, setParties] = useState<{ payer: string; payee: string; amount: bigint } | null>(null);
   const [timeline, setTimeline] = useState<IndexedEvent[]>([]);
 
@@ -64,6 +67,14 @@ export function CaseView({
       if (!live) return;
       setEvidence(ev);
       setSeats(st);
+
+      // Every juror's record, not just the connected account's: a panel where only one row shows an
+      // outcome reads as though only one juror was settled.
+      const jurors = [...new Set(st.map((x) => x.juror))];
+      const byJuror: Record<string, JurorRound> = {};
+      for (const j of jurors) byJuror[j.toLowerCase()] = await jurorRoundOf(court.core, dispute.id, j);
+      if (!live) return;
+      setRounds(byJuror);
 
       // The escrow knows who the humans are; the protocol deliberately does not.
       try {
@@ -190,19 +201,27 @@ export function CaseView({
           <div className="panel-rows">
             {seats.map((s, i) => {
               const mine = account && s.juror.toLowerCase() === account.h160.toLowerCase();
-              const outcome = round && mine ? seatOutcome(s, round, dispute) : null;
+              const r = rounds[s.juror.toLowerCase()];
+              const outcome = r ? seatOutcome(s, r, dispute) : 'pending';
+              const vote = !r
+                ? '…'
+                : r.revealed
+                  ? `voted ${CHOICE_LABEL[r.choice]?.title ?? r.choice}`
+                  : r.committed
+                    ? 'committed, never revealed'
+                    : 'never voted';
               return (
                 <div key={i} className={`panel-row ${mine ? 'mine' : ''}`}>
                   <span className="mono">{short(s.juror)}</span>
                   {mine && <span className="tag">you</span>}
-                  <span className="muted">
-                    {decided && outcome ? outcome.replace('-', ' ') : `seat ${s.slot}`}
-                  </span>
+                  <span className="muted">{vote}</span>
+                  <span className={`outcome ${outcome}`}>{decided ? OUTCOME_LABEL[outcome] : ROLE_LABEL[s.role]}</span>
                 </div>
               );
             })}
             <p className="hint">
-              {dispute.revealedCount} of {quorumNeeded(cfg)} revealed votes needed for a verdict.
+              {dispute.revealedCount} of {seats.length} seats revealed · {quorumNeeded(cfg)} needed for a verdict
+              {decided && dispute.revealedCount < quorumNeeded(cfg) ? ' — quorum was not met' : ''}
             </p>
           </div>
         )}
