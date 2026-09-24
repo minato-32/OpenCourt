@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import {IArbitrator} from "../interfaces/IArbitrator.sol";
 import {IArbitrable} from "../interfaces/IArbitrable.sol";
 import {IEligibility} from "../interfaces/IEligibility.sol";
+import {IEvidenceGroups} from "../interfaces/IEvidence.sol";
 
 /// @title ArbitratorCore — Phase-2 of the GetCourt (one court).
 /// @notice A single hardcoded court that resolves disputes via a commit-reveal
@@ -12,8 +13,12 @@ import {IEligibility} from "../interfaces/IEligibility.sol";
 ///
 /// Phase-2 mechanics on top of the Phase-1 MVP:
 ///  - EVIDENCE: submitEvidence(id, cid, contentHash, sizeBytes) records a bounded pointer on
-///    chain and emits the event, callable Drawing..Revealing. Bounded by MAX_URI_BYTES and
-///    MAX_EVIDENCE_PER_SUBMITTER so it can never bloat state.
+///    chain and logs it, during the Evidence phase only, so every juror judges one frozen set.
+///    Bounded by MAX_URI_BYTES and MAX_EVIDENCE_PER_SUBMITTER so it can never bloat state, and
+///    priced for non-parties by a refundable bond. Also logged in the ERC-1497 `Evidence` shape,
+///    so a standard indexer reads it with no adapter. Group ids are the app's to choose (default:
+///    the dispute id); two apps on one court may pick the same number, so an indexer joining on
+///    the group alone must also filter by app. Per-dispute reads are unambiguous either way.
 ///  - K-SLOT WEIGHTING: a juror who stakes N*minStake owns weight = N slots. Each
 ///    slot self-selects independently (keccak(seed, juror, slot) < drawThreshold),
 ///    each locks minStake, each is independently slashed. One commit / one reveal
@@ -40,12 +45,13 @@ import {IEligibility} from "../interfaces/IEligibility.sol";
 ///  - Payouts are PULL (withdraw), so no push-loop can revert/gas-bomb the core.
 ///  - Settlement NEVER mints: everything paid out is escrowed stake + prepaid fees.
 ///  - Appeals and a multi-court registry live outside this contract (CourtRegistry).
-contract ArbitratorCore is IArbitrator {
+contract ArbitratorCore is IArbitrator, IEvidenceGroups {
     // ------------------------------------------------------------------ config
     struct CourtConfig {
         uint256 minStake; // stake locked per seat (one slot)
         uint256 jurorFee; // fee paid to each rewarded seat (from the app's prepay)
         uint256 drawThreshold; // keccak(seed,juror,slot) must be below this to self-select
+        uint256 evidenceBond; // what a non-party pays to file; refundable, 0 = an open record
         uint64 evidenceBlocks; // FR-DL-02: how long the record stays open, before any draw
         uint64 activationDelayBlocks; // anti just-in-time staking
         uint64 drawDelayBlocks; // Δ before the draw opens (future-blockhash seed)
@@ -125,6 +131,8 @@ contract ArbitratorCore is IArbitrator {
         bytes32 contentHash; // sha256 of the referenced bytes, so a juror can detect substitution
         uint64 submittedAt;
         uint32 sizeBytes;
+        uint128 bond; // posted by a third-party filer, reclaimable once the dispute resolves
+        bool bondReclaimed;
         string uri;
     }
 
@@ -143,6 +151,7 @@ contract ArbitratorCore is IArbitrator {
         uint32 seatedWeight; // ROLE_SEATED seats (set at openReveal)
         uint32 revealedCount; // revealed seat weight
         uint256 feePot; // prepaid by the app at createDispute (== arbCost)
+        uint256 evidenceGroupId; // ERC-1497 group; defaults to disputeId, app may point it elsewhere
         bytes32 configHash; // snapshot; settle against this, never live config
     }
 
@@ -159,6 +168,10 @@ contract ArbitratorCore is IArbitrator {
     mapping(address => uint256) public staked; // free stake
     mapping(address => uint64) public activeAt; // block from which stake is eligible
     mapping(address => uint256) public withdrawable; // pull-payment balance
+
+    /// @notice Third-party evidence bonds still escrowed. Held apart from every fee pot and every
+    ///         stake, so settlement can never spend one and the never-mint sum stays checkable.
+    uint256 public bondsHeld;
 
     // reentrancy guard (custom, matching p2p-market convention — not OZ)
     uint256 private _lock = 1;
@@ -193,6 +206,19 @@ contract ArbitratorCore is IArbitrator {
     event EvidenceSubmitted(uint256 indexed disputeId, address indexed submitter, string cid);
     /// @notice The record is frozen; from here the panel judges exactly these pointers.
     event EvidenceClosed(uint256 indexed disputeId, uint32 evidenceCount);
+    /// @notice ERC-1497. Declared here rather than inherited from IEvidence: that interface also
+    ///         carries a `Dispute` event, which would collide with this contract's `Dispute`
+    ///         struct. The signature is identical, so the log topic is the standard's.
+    event Evidence(
+        IArbitrator indexed _arbitrator,
+        uint256 indexed _evidenceGroupID,
+        address indexed _party,
+        string _evidence
+    );
+    /// @notice The app pointed this dispute at an evidence group opened before the dispute existed.
+    event EvidenceGroupLinked(uint256 indexed disputeId, uint256 indexed evidenceGroupId);
+    event EvidenceBondPosted(uint256 indexed disputeId, address indexed submitter, uint256 amount);
+    event EvidenceBondReclaimed(uint256 indexed disputeId, address indexed submitter, uint256 amount);
 
     // ------------------------------------------------------------------ errors
     error BadConfig(string what);
@@ -215,6 +241,9 @@ contract ArbitratorCore is IArbitrator {
     error BadEvidence();
     error EvidenceCapReached();
     error TooManyParties();
+    error BondRequired(uint256 required);
+    error BondNotReclaimable();
+    error OnlyApp();
 
     constructor(CourtConfig memory cfg, address eligibilityPolicy, uint96 id) {
         if (eligibilityPolicy == address(0)) revert BadConfig("eligibility");
@@ -362,12 +391,23 @@ contract ArbitratorCore is IArbitrator {
         string calldata cid,
         bytes32 contentHash,
         uint32 sizeBytes
-    ) external {
+    ) external payable {
         // FR-DL-02: the record closes before the panel forms, so every juror judges the same set
         // of evidence. Nothing can be added once a seat has been claimed.
-        if (_disputes[disputeId].state != DisputeState.Evidence) revert WrongState();
+        Dispute storage d = _disputes[disputeId];
+        if (d.state != DisputeState.Evidence) revert WrongState();
         if (bytes(cid).length == 0 || bytes(cid).length > MAX_URI_BYTES) revert BadEvidence();
         if (_evidenceCount[disputeId][msg.sender] >= MAX_EVIDENCE_PER_SUBMITTER) revert EvidenceCapReached();
+
+        // The declared parties and the app file for free: the record is the case they came to
+        // make. Anyone else posts a bond. The bond is NEVER forfeited — no on-chain rule can judge
+        // whether a stranger's filing was useful, and one that tried would hand the parties a
+        // censorship lever. It prices bulk third-party filing in locked capital instead, and the
+        // per-submitter cap still bounds how many any one address can open at once.
+        uint256 required = (_excluded[disputeId][msg.sender] || msg.sender == d.app)
+            ? 0
+            : config.evidenceBond;
+        if (msg.value != required) revert BondRequired(required);
 
         _evidenceCount[disputeId][msg.sender] += 1;
         _evidenceOf[disputeId].push(
@@ -376,11 +416,35 @@ contract ArbitratorCore is IArbitrator {
                 contentHash: contentHash,
                 submittedAt: uint64(block.number),
                 sizeBytes: sizeBytes,
+                bond: uint128(required),
+                bondReclaimed: false,
                 uri: cid
             })
         );
 
+        if (required > 0) {
+            bondsHeld += required;
+            emit EvidenceBondPosted(disputeId, msg.sender, required);
+        }
+
         emit EvidenceSubmitted(disputeId, msg.sender, cid);
+        emit Evidence(IArbitrator(address(this)), d.evidenceGroupId, msg.sender, cid);
+    }
+
+    /// @notice Pull back an evidence bond once the dispute it was filed on has resolved.
+    /// @dev Pull, not push: refunding every bond inside finalize() would loop over a list any
+    ///      stranger can lengthen, which is a way to freeze settlement and with it every juror's
+    ///      stake. Each filer reclaims their own record, one call, no loop.
+    function reclaimEvidenceBond(uint256 disputeId, uint256 index) external noReentrant {
+        if (_disputes[disputeId].state != DisputeState.Resolved) revert WrongState();
+        EvidenceRecord storage e = _evidenceOf[disputeId][index];
+        if (e.submitter != msg.sender || e.bond == 0 || e.bondReclaimed) revert BondNotReclaimable();
+
+        e.bondReclaimed = true;
+        uint256 amount = e.bond;
+        bondsHeld -= amount;
+        withdrawable[msg.sender] += amount;
+        emit EvidenceBondReclaimed(disputeId, msg.sender, amount);
     }
 
     /// @notice Every evidence pointer attached to a dispute, oldest first.
@@ -437,6 +501,9 @@ contract ArbitratorCore is IArbitrator {
         d.evidenceDeadline = uint64(block.number) + config.evidenceBlocks;
         d.feePot = msg.value;
         d.configHash = configHash;
+        // ERC-1497 default: the dispute is its own evidence group. An app that opened a group
+        // earlier repoints it with linkEvidenceGroup while the record is still open.
+        d.evidenceGroupId = disputeId;
 
         if (extraData.length > 0) {
             address[] memory parties = abi.decode(extraData, (address[]));
@@ -449,6 +516,22 @@ contract ArbitratorCore is IArbitrator {
         }
 
         emit DisputeCreated(disputeId, msg.sender, choices, d.evidenceDeadline);
+    }
+
+    /// @inheritdoc IEvidenceGroups
+    /// @dev Re-linking within the window is allowed: the app may not know the final group id at
+    ///      the instant it calls createDispute.
+    function linkEvidenceGroup(uint256 disputeId, uint256 appGroupId) external {
+        Dispute storage d = _disputes[disputeId];
+        if (msg.sender != d.app) revert OnlyApp();
+        if (d.state != DisputeState.Evidence) revert WrongState();
+        d.evidenceGroupId = appGroupId;
+        emit EvidenceGroupLinked(disputeId, appGroupId);
+    }
+
+    /// @inheritdoc IEvidenceGroups
+    function evidenceGroupOf(uint256 disputeId) external view returns (uint256) {
+        return _disputes[disputeId].evidenceGroupId;
     }
 
     /// @notice Whether `who` is barred from this dispute's panel.

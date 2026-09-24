@@ -8,6 +8,7 @@ import { ethers } from 'hardhat';
 function cfg(treasury: string) {
   return {
     minStake: 100n, jurorFee: 10n, drawThreshold: ethers.MaxUint256,
+    evidenceBond: 0n, // a non-party files free in these courts
     evidenceBlocks: 5n, activationDelayBlocks: 0n, drawDelayBlocks: 1n, drawWindowBlocks: 100n,
     commitBlocks: 100n, revealBlocks: 100n, panelSize: 3n,
     betaBps: 1000n, gammaBps: 2500n, thetaBps: 2000n, quorumBps: 5000n,

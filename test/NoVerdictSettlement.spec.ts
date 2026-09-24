@@ -24,6 +24,7 @@ import { assertConservation } from './helpers';
 
 type Cfg = {
   minStake: bigint; jurorFee: bigint; drawThreshold: bigint;
+  evidenceBond: bigint;
   evidenceBlocks: bigint; activationDelayBlocks: bigint; drawDelayBlocks: bigint; drawWindowBlocks: bigint;
   commitBlocks: bigint; revealBlocks: bigint; panelSize: bigint;
   betaBps: bigint; gammaBps: bigint; thetaBps: bigint; quorumBps: bigint;
@@ -33,6 +34,7 @@ type Cfg = {
 function baseCfg(treasury: string, over: Partial<Cfg> = {}): Cfg {
   return {
     minStake: 100n, jurorFee: 10n, drawThreshold: ethers.MaxUint256,
+    evidenceBond: 0n, // a non-party files free in these courts
     evidenceBlocks: 5n, activationDelayBlocks: 0n, drawDelayBlocks: 1n, drawWindowBlocks: 100n,
     commitBlocks: 100n, revealBlocks: 100n, panelSize: 3n,
     betaBps: 1000n, gammaBps: 2500n, thetaBps: 2000n, quorumBps: 5000n,

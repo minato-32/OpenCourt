@@ -8,11 +8,15 @@ import { ethers } from 'hardhat';
 /// equal the sum of every participant's pullable `withdrawable` plus their remaining
 /// free `staked`. Call after every settlement.
 ///
+/// Outstanding evidence bonds (`bondsHeld`) count as escrowed value until reclaimed.
+///
 /// `accounts` must include every address that could hold a `withdrawable` or
 /// `staked` balance in the scenario: jurors, the app, the treasury, and any payer.
 export async function assertConservation(core: any, accounts: string[]) {
   const coreBal = await ethers.provider.getBalance(await core.getAddress());
-  let sum = 0n;
+  // Third-party evidence bonds are escrowed value too: held apart from every stake and fee pot,
+  // and only leaving the core once the filer reclaims them.
+  let sum = await core.bondsHeld();
   const seen = new Set<string>();
   for (const a of accounts) {
     const key = a.toLowerCase();

@@ -17,6 +17,7 @@ describe('ArbitratorCore — full resolution loop', () => {
       minStake: 100n,
       jurorFee: 10n,
       drawThreshold: ethers.MaxUint256, // everyone self-selects (test only)
+      evidenceBond: 0n, // a non-party files free in these courts
       evidenceBlocks: 5n, activationDelayBlocks: 0n,
       drawDelayBlocks: 1n,
       drawWindowBlocks: 100n,
@@ -50,7 +51,7 @@ describe('ArbitratorCore — full resolution loop', () => {
     const AMOUNT = ethers.parseUnits('1', 'gwei'); // escrowed value
 
     // 1. Fund escrow.
-    const fundTx = await escrow.connect(payer).fund(payee.address, { value: AMOUNT });
+    const fundTx = await escrow.connect(payer).fund(payee.address, '', { value: AMOUNT });
     await fundTx.wait();
     const escrowId = 1n;
 
@@ -133,7 +134,7 @@ describe('ArbitratorCore — full resolution loop', () => {
 
   it('refunds the app and refuses to rule when the panel is undersubscribed', async () => {
     const { core, escrow, payer, payee } = await deploy();
-    await (await escrow.connect(payer).fund(payee.address, { value: 1000n })).wait();
+    await (await escrow.connect(payer).fund(payee.address, '', { value: 1000n })).wait();
     const cost = await core.arbitrationCost('0x');
     await (await escrow.connect(payer).dispute(1n, { value: cost })).wait();
 

@@ -8,6 +8,7 @@ import { mine } from '@nomicfoundation/hardhat-network-helpers';
 
 type Cfg = {
   minStake: bigint; jurorFee: bigint; drawThreshold: bigint;
+  evidenceBond: bigint;
   evidenceBlocks: bigint; activationDelayBlocks: bigint; drawDelayBlocks: bigint; drawWindowBlocks: bigint;
   commitBlocks: bigint; revealBlocks: bigint; panelSize: bigint;
   betaBps: bigint; gammaBps: bigint; thetaBps: bigint; quorumBps: bigint;
@@ -17,6 +18,7 @@ type Cfg = {
 function courtCfg(treasury: string, panelSize: bigint): Cfg {
   return {
     minStake: 100n, jurorFee: 10n, drawThreshold: ethers.MaxUint256,
+    evidenceBond: 0n, // a non-party files free in these courts
     evidenceBlocks: 5n, activationDelayBlocks: 0n, drawDelayBlocks: 1n, drawWindowBlocks: 100n,
     commitBlocks: 100n, revealBlocks: 100n, panelSize,
     betaBps: 1000n, gammaBps: 2500n, thetaBps: 2000n, quorumBps: 5000n,
@@ -76,7 +78,7 @@ describe('AppealCoordinator — multi-round appeal', () => {
 
     // Fund + dispute (coordinator is the escrow's arbitrator).
     const AMOUNT = ethers.parseUnits('1', 'gwei');
-    await (await escrow.connect(payer).fund(payee.address, { value: AMOUNT })).wait();
+    await (await escrow.connect(payer).fund(payee.address, '', { value: AMOUNT })).wait();
     const cost0 = await coord.arbitrationCost('0x');
     expect(cost0).to.equal(30n); // court A: 3 * 10
     await (await escrow.connect(payer).dispute(1n, { value: cost0 })).wait();
@@ -137,7 +139,7 @@ describe('AppealCoordinator — multi-round appeal', () => {
     const escrow: any = await Escrow.deploy(await coord.getAddress());
     await escrow.waitForDeployment();
 
-    await (await escrow.connect(payer).fund(payee.address, { value: 1000n })).wait();
+    await (await escrow.connect(payer).fund(payee.address, '', { value: 1000n })).wait();
     await (await escrow.connect(payer).dispute(1n, { value: await coord.arbitrationCost('0x') })).wait();
 
     await runRound(courtA, 1n, jurors.slice(0, 3), 1); // RELEASE

@@ -11,6 +11,7 @@ const HASH = ethers.id('evidence bytes');
 function cfg(treasury: string) {
   return {
     minStake: 100n, jurorFee: 10n, drawThreshold: ethers.MaxUint256,
+    evidenceBond: 0n, // a non-party files free in these courts
     evidenceBlocks: 5n, activationDelayBlocks: 0n, drawDelayBlocks: 1n, drawWindowBlocks: 100n,
     commitBlocks: 100n, revealBlocks: 100n, panelSize: 3n,
     betaBps: 1000n, gammaBps: 2500n, thetaBps: 2000n, quorumBps: 5000n,
@@ -30,7 +31,7 @@ async function openCase() {
   const escrow = (await Escrow.deploy(await core.getAddress())) as any;
   await escrow.waitForDeployment();
 
-  await (await escrow.connect(payer).fund(payee.address, { value: 1000n })).wait();
+  await (await escrow.connect(payer).fund(payee.address, '', { value: 1000n })).wait();
   await (await escrow.connect(payer).dispute(1n, { value: await core.arbitrationCost('0x') })).wait();
   return { core, escrow, payer, payee, stranger, disputeId: 1n };
 }

@@ -11,6 +11,7 @@ type Cfg = {
   minStake: bigint;
   jurorFee: bigint;
   drawThreshold: bigint;
+  evidenceBond: bigint;
   evidenceBlocks: bigint;
   activationDelayBlocks: bigint;
   drawDelayBlocks: bigint;
@@ -32,6 +33,7 @@ function baseCfg(treasury: string, over: Partial<Cfg> = {}): Cfg {
     minStake: 100n,
     jurorFee: 10n,
     drawThreshold: ethers.MaxUint256, // everyone self-selects (test only)
+    evidenceBond: 0n, // a non-party files free in these courts
     evidenceBlocks: 5n, activationDelayBlocks: 0n,
     drawDelayBlocks: 1n,
     drawWindowBlocks: 100n,
@@ -81,7 +83,7 @@ describe('Phase-2 — submitEvidence', () => {
     const [, treasury, payer, payee, stranger] = await ethers.getSigners();
     const { core, escrow } = await deployCourt(baseCfg(treasury.address));
 
-    await (await escrow.connect(payer).fund(payee.address, { value: 1000n })).wait();
+    await (await escrow.connect(payer).fund(payee.address, '', { value: 1000n })).wait();
     const cost = await core.arbitrationCost('0x');
     await (await escrow.connect(payer).dispute(1n, { value: cost })).wait();
     const disputeId = 1n;
@@ -111,7 +113,7 @@ describe('Phase-2 — submitEvidence', () => {
     const [, treasury, payer, payee, stranger] = await ethers.getSigners();
     const { core, escrow } = await deployCourt(baseCfg(treasury.address));
 
-    await (await escrow.connect(payer).fund(payee.address, { value: 1000n })).wait();
+    await (await escrow.connect(payer).fund(payee.address, '', { value: 1000n })).wait();
     const cost = await core.arbitrationCost('0x');
     await (await escrow.connect(payer).dispute(1n, { value: cost })).wait();
     const disputeId = 1n;
@@ -147,7 +149,7 @@ describe('Phase-2 — alternates promotion', () => {
 
     const { core, escrow } = await deployCourt(baseCfg(treasury.address));
 
-    await (await escrow.connect(payer).fund(payee.address, { value: 1000n })).wait();
+    await (await escrow.connect(payer).fund(payee.address, '', { value: 1000n })).wait();
     for (const j of jurors) await (await core.connect(j).stake({ value: 100n })).wait();
 
     const cost = await core.arbitrationCost('0x');
@@ -218,7 +220,7 @@ describe('Phase-2 — k-slot weighting', () => {
     await (await core.connect(whale).stake({ value: 300n })).wait();
     expect(await core.weightOf(whale.address)).to.equal(3n);
 
-    await (await escrow.connect(payer).fund(payee.address, { value: 1000n })).wait();
+    await (await escrow.connect(payer).fund(payee.address, '', { value: 1000n })).wait();
     const cost = await core.arbitrationCost('0x');
     await (await escrow.connect(payer).dispute(1n, { value: cost })).wait();
     const disputeId = 1n;
@@ -267,7 +269,7 @@ describe('Phase-2 — gross-up fees', () => {
 
     expect(await core.arbitrationCost('0x')).to.equal(34n);
 
-    await (await escrow.connect(payer).fund(payee.address, { value: 1000n })).wait();
+    await (await escrow.connect(payer).fund(payee.address, '', { value: 1000n })).wait();
     for (const j of jurors) await (await core.connect(j).stake({ value: 100n })).wait();
 
     const cost = await core.arbitrationCost('0x');
