@@ -41,6 +41,8 @@ export interface Dispute {
   ruling: number;
   tied: boolean;
   ruled: boolean;
+  /** Resolved to 0 because most of the panel could not reach the evidence. */
+  voided: boolean;
   state: DisputeState;
   evidenceDeadline: bigint;
   drawBlock: bigint;
@@ -49,6 +51,7 @@ export interface Dispute {
   seatCount: number;
   seatedWeight: number;
   revealedCount: number;
+  unavailableWeight: number;
   feePot: bigint;
   configHash: string;
 }
@@ -79,6 +82,8 @@ export interface JurorRound {
   dutySeats: number;
   committed: boolean;
   revealed: boolean;
+  /** Answered by reporting the record unreachable instead of voting. */
+  reportedUnavailable: boolean;
   choice: number;
   commitment: string;
 }
@@ -92,6 +97,7 @@ export async function getDispute(core: string, id: bigint): Promise<Dispute> {
     ruling: Number(d.ruling),
     tied: d.tied,
     ruled: d.ruled,
+    voided: d.voided,
     state: Number(d.state) as DisputeState,
     evidenceDeadline: d.evidenceDeadline,
     drawBlock: d.drawBlock,
@@ -100,6 +106,7 @@ export async function getDispute(core: string, id: bigint): Promise<Dispute> {
     seatCount: Number(d.seatCount),
     seatedWeight: Number(d.seatedWeight),
     revealedCount: Number(d.revealedCount),
+    unavailableWeight: Number(d.unavailableWeight),
     feePot: d.feePot,
     configHash: d.configHash,
   };
@@ -143,6 +150,7 @@ export async function jurorRoundOf(core: string, id: bigint, juror: string): Pro
     dutySeats: Number(j.dutySeats),
     committed: j.committed,
     revealed: j.revealed,
+    reportedUnavailable: j.reportedUnavailable,
     choice: Number(j.choice),
     commitment: j.commitment,
   };
@@ -178,6 +186,8 @@ export type Outcome = 'rewarded' | 'slashed-gamma' | 'slashed-beta' | 'released'
 export function seatOutcome(seat: Seat, round: JurorRound, d: Dispute): Outcome {
   if (d.state !== DisputeState.Resolved) return 'pending';
   if (seat.role === SeatRole.Released) return 'released';
+  // In a void nobody is slashed: answering (either way) is paid, and silence just gets its stake.
+  if (d.voided) return round.revealed || round.reportedUnavailable ? 'rewarded' : 'released';
   const rewarded = round.revealed && (d.ruling === 0 || round.choice === d.ruling);
   if (rewarded) return 'rewarded';
   return seat.role === SeatRole.Seated && round.revealed ? 'slashed-beta' : 'slashed-gamma';
@@ -194,6 +204,7 @@ export const OUTCOME_LABEL: Record<Outcome, string> = {
 /** Why a dispute carried no verdict. */
 export function noVerdictReason(d: Dispute, cfg: CourtConfig): string | null {
   if (d.state !== DisputeState.Resolved || d.ruling !== 0) return null;
+  if (d.voided) return 'the evidence could not be retrieved by most of the panel';
   if (d.tied) return 'genuine tie';
   if (d.seatCount < cfg.panelSize) return 'undersubscribed draw — refunded';
   if (d.revealedCount < quorumNeeded(cfg)) return `quorum failed (${d.revealedCount}/${quorumNeeded(cfg)} revealed)`;

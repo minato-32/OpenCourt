@@ -174,6 +174,13 @@ export function DisputeActions({
             </button>
             <button
               className="btn ghost"
+              disabled={tx.state === 'signing' || round?.revealed || round?.reportedUnavailable}
+              onClick={() => run('Report the record unreachable', 'reportUnavailable', [dispute.id])}
+            >
+              I cannot retrieve the evidence
+            </button>
+            <button
+              className="btn ghost"
               disabled={tx.state === 'signing' || windowOpen}
               onClick={() => run('Finalize', 'finalize', [dispute.id])}
             >
@@ -207,6 +214,15 @@ export function DisputeActions({
           You committed but this browser has no stored salt for this dispute. Without it the reveal cannot be
           reconstructed and the seat is slashed at γ. Import a backup if you have one.
         </div>
+      )}
+
+      {dispute.state === DisputeState.Revealing && mySeats > 0 && !round?.revealed && (
+        <p className="hint">
+          Reporting the record unreachable answers for your seat instead of voting. If most of the
+          jurors who turn up say the same, the case voids and nobody is slashed. If you are the only
+          one, you are treated as silent and slashed at {cfg.gammaBps / 100}% — so say it only when
+          it is true.
+        </p>
       )}
 
       {tx.state !== 'idle' && <div className={`txline ${tx.state}`}>{tx.msg}</div>}

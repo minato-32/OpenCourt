@@ -126,7 +126,9 @@ export function CaseView({
 
   const outcomeLine = decided
     ? dispute.ruling === 0
-      ? `No decision was reached — ${reason ?? 'the panel refused to rule'}. The escrow returns to the payer.`
+      ? dispute.voided
+        ? 'No decision was reached: most of the jury could not retrieve the evidence, so the case was voided and no juror was penalised. The escrow returns to the payer.'
+        : `No decision was reached — ${reason ?? 'the panel refused to rule'}. The escrow returns to the payer.`
       : `${CHOICE_LABEL[dispute.ruling]?.title ?? `Ruling ${dispute.ruling}`}.`
     : PHASE_STORY[dispute.state];
 
@@ -259,9 +261,11 @@ export function CaseView({
                 ? '…'
                 : r.revealed
                   ? `voted ${CHOICE_LABEL[r.choice]?.title ?? r.choice}`
-                  : r.committed
-                    ? 'committed, never revealed'
-                    : 'never voted';
+                  : r.reportedUnavailable
+                    ? 'could not retrieve the evidence'
+                    : r.committed
+                      ? 'committed, never revealed'
+                      : 'never voted';
               return (
                 <div key={i} className={`panel-row ${mine ? 'mine' : ''}`}>
                   <span className="mono">{short(s.juror)}</span>

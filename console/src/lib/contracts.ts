@@ -74,7 +74,9 @@ export interface CourtConfig {
   quorumBps: number;
   appFeeBps: number;
   protocolFeeBps: number;
+  pinFeeBps: number;
   treasury: string;
+  pinner: string;
 }
 
 export async function courtConfig(core: string): Promise<CourtConfig> {
@@ -97,7 +99,9 @@ export async function courtConfig(core: string): Promise<CourtConfig> {
     quorumBps: Number(c[14]),
     appFeeBps: Number(c[15]),
     protocolFeeBps: Number(c[16]),
-    treasury: c[17] as string,
+    pinFeeBps: Number(c[17]),
+    treasury: c[18] as string,
+    pinner: c[19] as string,
   };
 }
 
