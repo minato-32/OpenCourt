@@ -147,7 +147,9 @@ function courtConfig(treasury: string) {
     quorumBps: 5000,
     appFeeBps: 0,
     protocolFeeBps: 0,
+    pinFeeBps: 0,
     treasury,
+    pinner: ethers.ZeroAddress,
   };
 }
 

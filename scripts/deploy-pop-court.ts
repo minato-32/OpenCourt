@@ -75,7 +75,9 @@ interface CourtConfig {
   quorumBps: number;
   appFeeBps: number;
   protocolFeeBps: number;
+  pinFeeBps: number;
   treasury: string;
+  pinner: string;
 }
 
 function demoCourtConfig(treasury: string): CourtConfig {
@@ -97,7 +99,9 @@ function demoCourtConfig(treasury: string): CourtConfig {
     quorumBps: 5000,
     appFeeBps: 0, // demo: no app/protocol take -> cost == panelSize * jurorFee
     protocolFeeBps: 0,
+    pinFeeBps: 0,
     treasury,
+    pinner: ethers.ZeroAddress,
   };
 }
 

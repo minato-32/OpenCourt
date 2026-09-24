@@ -65,7 +65,9 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
         uint16 quorumBps; // min revealed weight / panelSize for a valid verdict
         uint16 appFeeBps; // fee take credited back to the app at settlement
         uint16 protocolFeeBps; // fee take routed to the treasury at settlement
-        address treasury; // receives the treasury cut + protocol fee (pull)
+        uint16 pinFeeBps; // FR-EV-06: fee take routed to whoever pins this court's evidence
+        address treasury;
+        address pinner; // paid pinFeeBps of every arbitration fee; may be 0 when pinFeeBps is 0 // receives the treasury cut + protocol fee (pull)
     }
 
     enum DisputeState {
@@ -120,6 +122,9 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
         uint32 dutySeats; // of those, how many are ROLE_SEATED (set at openReveal)
         bool committed;
         bool revealed;
+        /// @dev The juror discharged their duty by reporting the evidence unretrievable instead
+        ///      of voting. Exclusive with `revealed`: a round is one or the other, never both.
+        bool reportedUnavailable;
         uint8 choice;
         bytes32 commitment;
     }
@@ -142,6 +147,7 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
         uint8 ruling;
         bool tied;
         bool ruled; // ruling delivered to the app
+        bool voided; // resolved to 0 because the panel could not reach the evidence
         DisputeState state;
         uint64 evidenceDeadline;
         uint64 drawBlock;
@@ -150,6 +156,7 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
         uint32 seatCount; // total admitted seats
         uint32 seatedWeight; // ROLE_SEATED seats (set at openReveal)
         uint32 revealedCount; // revealed seat weight
+        uint32 unavailableWeight; // seat weight that reported the evidence unretrievable
         uint256 feePot; // prepaid by the app at createDispute (== arbCost)
         uint256 evidenceGroupId; // ERC-1497 group; defaults to disputeId, app may point it elsewhere
         bytes32 configHash; // snapshot; settle against this, never live config
@@ -219,6 +226,10 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
     event EvidenceGroupLinked(uint256 indexed disputeId, uint256 indexed evidenceGroupId);
     event EvidenceBondPosted(uint256 indexed disputeId, address indexed submitter, uint256 amount);
     event EvidenceBondReclaimed(uint256 indexed disputeId, address indexed submitter, uint256 amount);
+    /// @notice A seated juror could not retrieve the record they were asked to judge.
+    event EvidenceUnavailable(uint256 indexed disputeId, address indexed juror, uint32 seats);
+    /// @notice Most of the participating panel could not reach the record: no verdict, no slash.
+    event DisputeVoided(uint256 indexed disputeId, uint32 unavailableWeight, uint32 participation);
 
     // ------------------------------------------------------------------ errors
     error BadConfig(string what);
@@ -244,6 +255,7 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
     error BondRequired(uint256 required);
     error BondNotReclaimable();
     error OnlyApp();
+    error AlreadyReported();
 
     constructor(CourtConfig memory cfg, address eligibilityPolicy, uint96 id) {
         if (eligibilityPolicy == address(0)) revert BadConfig("eligibility");
@@ -274,8 +286,10 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
         if (cfg.quorumBps == 0 || cfg.quorumBps > BPS) revert BadConfig("quorumBps");
         // App + protocol take is bounded, and jurors are paid FIRST out of the
         // grossed-up cost (see arbitrationCost) — never underpaid by the take.
-        if (uint256(cfg.appFeeBps) + cfg.protocolFeeBps > MAX_TAKE_BPS) revert BadConfig("take");
+        if (uint256(cfg.appFeeBps) + cfg.protocolFeeBps + cfg.pinFeeBps > MAX_TAKE_BPS) revert BadConfig("take");
         if (cfg.treasury == address(0)) revert BadConfig("treasury");
+        // A pinning take with nowhere to send it would silently accrue to nobody.
+        if (cfg.pinFeeBps > 0 && cfg.pinner == address(0)) revert BadConfig("pinner");
         // FR-CR-02 — jurors must not be underpaid for what they are made to risk.
         // q* is the probability a rational juror would have to assign to "my vote
         // ends up the incoherent one" before voting honestly stops paying:
@@ -313,8 +327,8 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
         // Gross-up: cost * (BPS - take) >= panelSize * jurorFee, so after the take is
         // removed the remaining pot still covers every rewarded seat's full fee
         // (rewarded seats are SEATED seats, so never more than panelSize of them).
-        // cost = ceil( panelSize * jurorFee * BPS / (BPS - appFeeBps - protocolFeeBps) ).
-        uint256 denom = uint256(BPS) - cfg.appFeeBps - cfg.protocolFeeBps; // > 0 by the take cap
+        // cost = ceil( panelSize * jurorFee * BPS / (BPS - appFeeBps - protocolFeeBps - pinFeeBps) ).
+        uint256 denom = uint256(BPS) - cfg.appFeeBps - cfg.protocolFeeBps - cfg.pinFeeBps; // > 0 by the take cap
         uint256 num = uint256(cfg.panelSize) * cfg.jurorFee * BPS;
         arbCost = (num + denom - 1) / denom;
     }
@@ -534,6 +548,11 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
         return _disputes[disputeId].evidenceGroupId;
     }
 
+    /// @notice Whether this dispute ended because the panel could not reach the evidence.
+    function isVoided(uint256 disputeId) external view returns (bool) {
+        return _disputes[disputeId].voided;
+    }
+
     /// @notice Whether `who` is barred from this dispute's panel.
     function isExcluded(uint256 disputeId, address who) external view returns (bool) {
         return _excluded[disputeId][who] || who == _disputes[disputeId].app;
@@ -716,7 +735,7 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
         if (choice == 0 || choice > d.choices) revert BadChoice();
         JurorRound storage jr = _jurorRound[disputeId][msg.sender];
         if (jr.dutySeats == 0) revert NotSeated(); // not on the seated panel
-        if (jr.revealed) revert BadReveal();
+        if (jr.revealed || jr.reportedUnavailable) revert BadReveal();
         if (keccak256(abi.encodePacked(disputeId, msg.sender, choice, salt)) != jr.commitment) revert BadReveal();
 
         jr.revealed = true;
@@ -724,6 +743,29 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
         _votes[disputeId][choice] += jr.dutySeats;
         d.revealedCount += jr.dutySeats;
         emit VoteRevealed(disputeId, msg.sender, choice, jr.dutySeats);
+    }
+
+    /// @notice Report that this dispute's evidence cannot be retrieved, instead of voting.
+    /// @dev A juror who cannot read the record cannot judge it, and voting anyway is worse than
+    ///      saying so. This is a discharge of the reveal duty, not a vote: it carries no choice,
+    ///      so it can never tip a verdict one way.
+    ///
+    ///      Reporting alone is NOT free. A lone reporter is a juror who did not reveal, and is
+    ///      slashed at gamma like any other silence. It costs nothing only when MOST of the
+    ///      participating panel reports the same thing — at which point the failure is the
+    ///      court's, not theirs, and the dispute voids with nobody slashed (see _tally).
+    function reportUnavailable(uint256 disputeId) external {
+        Dispute storage d = _disputes[disputeId];
+        if (d.state != DisputeState.Revealing) revert WrongState();
+        if (block.number > d.revealDeadline) revert DrawClosed();
+        JurorRound storage jr = _jurorRound[disputeId][msg.sender];
+        if (jr.dutySeats == 0) revert NotSeated();
+        if (jr.revealed) revert BadReveal();
+        if (jr.reportedUnavailable) revert AlreadyReported();
+
+        jr.reportedUnavailable = true;
+        d.unavailableWeight += jr.dutySeats;
+        emit EvidenceUnavailable(disputeId, msg.sender, jr.dutySeats);
     }
 
     /// @notice Tally + settle a dispute. Callable by anyone once terminal-eligible.
@@ -819,7 +861,21 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
         d.seatedWeight = seated;
     }
 
-    function _tally(uint256 disputeId, Dispute storage d) private view returns (uint8 ruling, bool tied) {
+    function _tally(uint256 disputeId, Dispute storage d) private returns (uint8 ruling, bool tied) {
+        // FR-EV-06: the record was unreachable for most of the panel that turned up. There is no
+        // honest verdict to be had, so the dispute voids: ruling 0, and nobody is slashed for a
+        // failure that was the court's. Checked BEFORE the vote tally, because the votes that did
+        // land were cast by jurors reading a record their peers could not.
+        uint256 need = (uint256(config.panelSize) * config.quorumBps + BPS - 1) / BPS;
+        uint32 participation = d.revealedCount + d.unavailableWeight;
+        // The quorum floor matters: without it one reporter on an otherwise silent panel would be
+        // a majority of one and could void any case single-handed.
+        if (participation >= need && uint256(d.unavailableWeight) * 2 > participation) {
+            d.voided = true;
+            emit DisputeVoided(disputeId, d.unavailableWeight, participation);
+            return (0, false);
+        }
+
         uint32 best = 0;
         for (uint8 c = 1; c <= d.choices; c++) {
             uint32 v = _votes[disputeId][c];
@@ -832,7 +888,6 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
             }
         }
         // Quorum: enough of the panel weight revealed, else refuse (ruling 0).
-        uint256 need = (uint256(config.panelSize) * config.quorumBps + BPS - 1) / BPS;
         if (d.revealedCount < need || tied || best == 0) {
             return (0, tied);
         }
@@ -877,9 +932,19 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
             JurorRound storage jr = _jurorRound[disputeId][s.juror];
             // Rewarded = the juror revealed, AND either no verdict carried (tie /
             // quorum failure — FR-ST-02 forbids slashing them) or they voted with it.
-            bool rewarded = jr.revealed && (ruling == 0 || jr.choice == ruling);
+            // In a VOID, reporting the record unreachable is doing the work: it is the answer the
+            // court asked for, so it is paid exactly like a reveal.
+            bool rewarded = d.voided
+                ? (jr.revealed || jr.reportedUnavailable)
+                : (jr.revealed && (ruling == 0 || jr.choice == ruling));
             if (rewarded) {
                 rewardedSeats += 1; // paid in pass 2
+            } else if (d.voided) {
+                // Nobody is slashed in a void, not even a seat that stayed silent: the evidence
+                // was demonstrably unreachable, so silence is not proof of shirking. Stake back,
+                // no fee — the seat did not answer.
+                s.settled = true;
+                withdrawable[s.juror] += s.slotStake;
             } else {
                 // SEATED + revealed-but-wrong => beta (reachable only when ruling != 0;
                 // with ruling == 0 every revealer was rewarded above). Otherwise
@@ -900,6 +965,12 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
         uint256 cost = d.feePot; // == arbCost
         uint256 appCut = (cost * config.appFeeBps) / BPS;
         uint256 protocolCut = (cost * config.protocolFeeBps) / BPS;
+        // FR-EV-06: the pinning take is paid whatever the outcome. Whoever hosts this court's
+        // evidence did that job before a single juror turned up, and is owed for it even when the
+        // panel never ruled. The chain cannot verify that they pinned anything — that is what the
+        // unavailability void is for: a pinner who does not deliver ends up voiding cases.
+        uint256 pinCut = (cost * config.pinFeeBps) / BPS;
+        if (pinCut > 0) withdrawable[config.pinner] += pinCut;
 
         // Distribute the slashed pot: treasury cut, then rewarded seats split the rest.
         uint256 treasuryCut = (pot * config.thetaBps) / BPS;
@@ -916,13 +987,13 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
             }
             uint256 jurorFeesPaid = rewardedSeats * config.jurorFee;
             // Residue of the prepay (forfeited fees) refunds to the app.
-            withdrawable[d.app] += appCut + (cost - appCut - protocolCut - jurorFeesPaid);
+            withdrawable[d.app] += appCut + (cost - appCut - protocolCut - pinCut - jurorFeesPaid);
             withdrawable[config.treasury] += protocolCut + treasuryCut + dust;
         } else {
             // NOBODY revealed (so nobody earned a fee — note this is no longer the
             // tie/quorum-failure case, which pays its revealers above): refund the
             // prepay less the protocol take to the app, slashed pot to treasury.
-            withdrawable[d.app] += cost - protocolCut;
+            withdrawable[d.app] += cost - protocolCut - pinCut;
             withdrawable[config.treasury] += protocolCut + pot;
         }
     }

@@ -93,7 +93,9 @@ interface CourtConfig {
   quorumBps: number;
   appFeeBps: number;
   protocolFeeBps: number;
+  pinFeeBps: number;
   treasury: string;
+  pinner: string;
 }
 
 // DENOMINATION (verified on Paseo Asset Hub Next, not assumed): the chain's
@@ -127,7 +129,9 @@ function demoCourtConfig(treasury: string): CourtConfig {
     quorumBps: 5000, // >= 50% of the panel must reveal
     appFeeBps: 0, // demo: no app/protocol take -> cost == panelSize * jurorFee
     protocolFeeBps: 0,
+    pinFeeBps: 0,
     treasury, // receives the treasury cut (pull)
+    pinner: ethers.ZeroAddress, // no pinning take in the demo court
   };
 }
 

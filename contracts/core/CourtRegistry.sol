@@ -87,9 +87,11 @@ contract CourtRegistry {
         if (cfg.gammaBps < cfg.betaBps) revert BadConfig("gamma<beta");
         if (cfg.thetaBps >= BPS) revert BadConfig("thetaBps");
         if (cfg.quorumBps == 0 || cfg.quorumBps > BPS) revert BadConfig("quorumBps");
-        // App + protocol take is bounded (jurors paid first out of the gross-up).
-        if (uint256(cfg.appFeeBps) + cfg.protocolFeeBps > MAX_TAKE_BPS) revert BadConfig("take");
+        // App + protocol + pinning take is bounded (jurors paid first out of the gross-up).
+        if (uint256(cfg.appFeeBps) + cfg.protocolFeeBps + cfg.pinFeeBps > MAX_TAKE_BPS) revert BadConfig("take");
         if (cfg.treasury == address(0)) revert BadConfig("treasury");
+        // A pinning take with nowhere to send it would silently accrue to nobody.
+        if (cfg.pinFeeBps > 0 && cfg.pinner == address(0)) revert BadConfig("pinner");
         // FR-CR-02 — jurors must not be underpaid for what they are made to risk.
         // q* is the probability a rational juror would have to assign to "my vote
         // ends up the incoherent one" before voting honestly stops paying:

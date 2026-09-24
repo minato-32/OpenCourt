@@ -30,7 +30,9 @@ describe('ArbitratorCore — full resolution loop', () => {
       quorumBps: 5000n, // 50% must reveal
       appFeeBps: 0n, // Phase-2 fee take (0 keeps arbitrationCost == panelSize*jurorFee)
       protocolFeeBps: 0n,
+      pinFeeBps: 0n,
       treasury: treasury.address,
+      pinner: ethers.ZeroAddress,
     };
 
     const Core = await ethers.getContractFactory('ArbitratorCore');

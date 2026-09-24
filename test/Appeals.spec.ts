@@ -12,7 +12,8 @@ type Cfg = {
   evidenceBlocks: bigint; activationDelayBlocks: bigint; drawDelayBlocks: bigint; drawWindowBlocks: bigint;
   commitBlocks: bigint; revealBlocks: bigint; panelSize: bigint;
   betaBps: bigint; gammaBps: bigint; thetaBps: bigint; quorumBps: bigint;
-  appFeeBps: bigint; protocolFeeBps: bigint; treasury: string;
+  appFeeBps: bigint; protocolFeeBps: bigint; pinFeeBps: bigint;
+  treasury: string; pinner: string;
 };
 
 function courtCfg(treasury: string, panelSize: bigint): Cfg {
@@ -22,7 +23,8 @@ function courtCfg(treasury: string, panelSize: bigint): Cfg {
     evidenceBlocks: 5n, activationDelayBlocks: 0n, drawDelayBlocks: 1n, drawWindowBlocks: 100n,
     commitBlocks: 100n, revealBlocks: 100n, panelSize,
     betaBps: 1000n, gammaBps: 2500n, thetaBps: 2000n, quorumBps: 5000n,
-    appFeeBps: 0n, protocolFeeBps: 0n, treasury,
+    appFeeBps: 0n, protocolFeeBps: 0n, pinFeeBps: 0n,
+    treasury, pinner: ethers.ZeroAddress,
   };
 }
 

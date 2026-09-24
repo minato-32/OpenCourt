@@ -25,7 +25,9 @@ type Cfg = {
   quorumBps: bigint;
   appFeeBps: bigint;
   protocolFeeBps: bigint;
+  pinFeeBps: bigint;
   treasury: string;
+  pinner: string;
 };
 
 function baseCfg(treasury: string, over: Partial<Cfg> = {}): Cfg {
@@ -46,7 +48,9 @@ function baseCfg(treasury: string, over: Partial<Cfg> = {}): Cfg {
     quorumBps: 5000n,
     appFeeBps: 0n,
     protocolFeeBps: 0n,
+    pinFeeBps: 0n,
     treasury,
+    pinner: ethers.ZeroAddress,
     ...over,
   };
 }

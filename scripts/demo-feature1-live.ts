@@ -258,7 +258,9 @@ async function main() {
     quorumBps: 5000,
     appFeeBps: 0,
     protocolFeeBps: 0,
+    pinFeeBps: 0,
     treasury: deployer.h160,
+    pinner: ethers.ZeroAddress,
   };
   const eligibility = await instantiate(
     deployer.signer, 'StakeWeightedEligibility',
