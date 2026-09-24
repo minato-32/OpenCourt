@@ -3,6 +3,7 @@ pragma solidity ^0.8.28;
 
 import {IArbitrator} from "../interfaces/IArbitrator.sol";
 import {IArbitrable} from "../interfaces/IArbitrable.sol";
+import {IEvidenceGroups} from "../interfaces/IEvidence.sol";
 
 /// @title AppealCoordinator — multi-round appeals as a composition layer.
 /// @notice Sits between an app and an ORDERED list of courts (ArbitratorCore
@@ -19,7 +20,7 @@ import {IArbitrable} from "../interfaces/IArbitrable.sol";
 ///      chains rulings. The FINAL ruling (last un-appealed round) is delivered to
 ///      the app exactly once, via a revert-proof low-level call so a hostile app
 ///      can never freeze the chain.
-contract AppealCoordinator is IArbitrator, IArbitrable {
+contract AppealCoordinator is IArbitrator, IArbitrable, IEvidenceGroups {
     IArbitrator[] public courts; // round r -> courts[r]; panel sizes must increase
     uint64 public immutable appealWindowBlocks; // 0 => no appeals (single round)
 
@@ -35,6 +36,8 @@ contract AppealCoordinator is IArbitrator, IArbitrable {
         uint64 appealDeadline;
         CoordState state;
         uint256 childId; // dispute id inside courts[round]
+        uint256 evidenceGroupId; // ERC-1497 group, carried onto every appeal round
+        bool groupLinked; // whether the app chose a group, or we are on the default
     }
 
     uint256 public coordCount;
@@ -54,6 +57,7 @@ contract AppealCoordinator is IArbitrator, IArbitrable {
     event CoordDisputeCreated(uint256 indexed coordId, address indexed app, uint256 childId);
     event RoundRuled(uint256 indexed coordId, uint32 round, uint8 ruling, uint64 appealDeadline);
     event Appealed(uint256 indexed coordId, uint32 newRound, uint256 childId);
+    event EvidenceGroupLinked(uint256 indexed coordId, uint256 indexed evidenceGroupId);
     event FinalRuling(uint256 indexed coordId, uint8 ruling);
     event RulingDeliveryFailed(uint256 indexed coordId);
     event Withdrawn(address indexed account, uint256 amount);
@@ -68,6 +72,7 @@ contract AppealCoordinator is IArbitrator, IArbitrable {
     error NoHigherCourt();
     error TooEarly();
     error NothingToWithdraw();
+    error OnlyApp();
     error TransferFailed();
 
     constructor(IArbitrator[] memory _courts, uint64 _appealWindowBlocks) {
@@ -81,6 +86,24 @@ contract AppealCoordinator is IArbitrator, IArbitrable {
     }
 
     // ------------------------------------------------------------ IArbitrator
+    // -------------------------------------------------------- IEvidenceGroups
+    /// @inheritdoc IEvidenceGroups
+    /// @dev Forwarded to the round currently sitting. The coordinator is the child court's app, so
+    ///      it is the only address that court will accept the link from.
+    function linkEvidenceGroup(uint256 coordId, uint256 appGroupId) external {
+        CoordDispute storage cd = _disputes[coordId];
+        if (msg.sender != cd.app) revert OnlyApp();
+        cd.evidenceGroupId = appGroupId;
+        cd.groupLinked = true;
+        IEvidenceGroups(address(courts[cd.round])).linkEvidenceGroup(cd.childId, appGroupId);
+        emit EvidenceGroupLinked(coordId, appGroupId);
+    }
+
+    /// @inheritdoc IEvidenceGroups
+    function evidenceGroupOf(uint256 coordId) external view returns (uint256) {
+        return _disputes[coordId].evidenceGroupId;
+    }
+
     /// @inheritdoc IArbitrator
     function arbitrationCost(bytes calldata extraData) public view returns (uint256) {
         return courts[0].arbitrationCost(extraData);
@@ -115,6 +138,7 @@ contract AppealCoordinator is IArbitrator, IArbitrable {
         cd.round = 0;
         cd.childId = childId;
         cd.state = CoordState.Pending;
+        cd.evidenceGroupId = IEvidenceGroups(address(c0)).evidenceGroupOf(childId); // whatever the first court defaulted to
         _link[address(c0)][childId] = coordId;
 
         emit CoordDisputeCreated(coordId, msg.sender, childId);
@@ -173,6 +197,9 @@ contract AppealCoordinator is IArbitrator, IArbitrable {
         if (msg.value != cost) revert WrongFee(cost);
 
         uint256 childId = nc.createDispute{value: msg.value}(cd.choices, "");
+        // Every round files into the SAME group. An appeal re-argues one case; splitting the
+        // record per round would hide round 1's evidence from round 2's panel.
+        IEvidenceGroups(address(nc)).linkEvidenceGroup(childId, cd.evidenceGroupId);
         cd.round = uint32(next);
         cd.childId = childId;
         cd.state = CoordState.Pending;
