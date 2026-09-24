@@ -134,8 +134,22 @@ export class JuryArbitrator {
     signer: PolkadotSigner,
     disputeId: bigint | number,
     cid: string,
+    contentHash: string,
+    sizeBytes: number,
   ): Promise<WriteResult> {
-    return this.client.write(signer, 'submitEvidence', [disputeId, cid]);
+    return this.client.write(signer, 'submitEvidence', [disputeId, cid, contentHash, sizeBytes]);
+  }
+
+  /** Every evidence pointer on a dispute, read from storage — no indexer needed. */
+  async getEvidence(disputeId: bigint | number) {
+    const rows = (await this.client.read('getEvidence', [disputeId]))[0] as any[];
+    return rows.map((r) => ({
+      submitter: r.submitter as string,
+      contentHash: r.contentHash as string,
+      submittedAt: r.submittedAt as bigint,
+      sizeBytes: Number(r.sizeBytes),
+      uri: r.uri as string,
+    }));
   }
 
   async currentRuling(disputeId: bigint | number): Promise<RulingView> {

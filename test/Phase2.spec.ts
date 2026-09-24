@@ -74,7 +74,9 @@ function commitmentOf(disputeId: bigint, juror: string, choice: number, salt: st
 }
 
 describe('Phase-2 — submitEvidence', () => {
-  it('emits EvidenceSubmitted while a dispute is live and reverts otherwise', async () => {
+  const HASH = ethers.id('evidence bytes');
+
+  it('records a pointer on chain, emits the event, and rejects a dead dispute', async () => {
     const [, treasury, payer, payee, stranger] = await ethers.getSigners();
     const { core, escrow } = await deployCourt(baseCfg(treasury.address));
 
@@ -84,15 +86,53 @@ describe('Phase-2 — submitEvidence', () => {
     const disputeId = 1n;
 
     // Anyone can submit evidence while Drawing.
-    await expect(core.connect(stranger).submitEvidence(disputeId, 'ipfs://cid-1'))
+    await expect(core.connect(stranger).submitEvidence(disputeId, 'ipfs://cid-1', HASH, 1234))
       .to.emit(core, 'EvidenceSubmitted')
       .withArgs(disputeId, stranger.address, 'ipfs://cid-1');
 
-    // A non-existent / not-yet-live dispute rejects.
-    await expect(core.connect(stranger).submitEvidence(999n, 'ipfs://x')).to.be.revertedWithCustomError(
+    // The pointer is readable without an indexer — that is why it is stored, not only logged.
+    const records = await core.getEvidence(disputeId);
+    expect(records.length).to.equal(1);
+    expect(records[0].submitter).to.equal(stranger.address);
+    expect(records[0].uri).to.equal('ipfs://cid-1');
+    expect(records[0].contentHash).to.equal(HASH);
+    expect(records[0].sizeBytes).to.equal(1234n);
+    expect(records[0].submittedAt).to.be.greaterThan(0n);
+    expect(await core.evidenceCountOf(disputeId, stranger.address)).to.equal(1n);
+
+    await expect(core.connect(stranger).submitEvidence(999n, 'ipfs://x', HASH, 1)).to.be.revertedWithCustomError(
       core,
       'WrongState',
     );
+  });
+
+  it('bounds what one submitter can attach, and rejects an empty or oversized pointer', async () => {
+    const [, treasury, payer, payee, stranger] = await ethers.getSigners();
+    const { core, escrow } = await deployCourt(baseCfg(treasury.address));
+
+    await (await escrow.connect(payer).fund(payee.address, { value: 1000n })).wait();
+    const cost = await core.arbitrationCost('0x');
+    await (await escrow.connect(payer).dispute(1n, { value: cost })).wait();
+    const disputeId = 1n;
+
+    await expect(core.connect(stranger).submitEvidence(disputeId, '', HASH, 1)).to.be.revertedWithCustomError(
+      core,
+      'BadEvidence',
+    );
+    await expect(
+      core.connect(stranger).submitEvidence(disputeId, 'x'.repeat(129), HASH, 1),
+    ).to.be.revertedWithCustomError(core, 'BadEvidence');
+
+    // Eight is the per-submitter cap; the ninth is refused, and another address is unaffected.
+    for (let i = 0; i < 8; i++) {
+      await (await core.connect(stranger).submitEvidence(disputeId, `ipfs://cid-${i}`, HASH, 10)).wait();
+    }
+    await expect(
+      core.connect(stranger).submitEvidence(disputeId, 'ipfs://one-too-many', HASH, 10),
+    ).to.be.revertedWithCustomError(core, 'EvidenceCapReached');
+
+    await (await core.connect(payer).submitEvidence(disputeId, 'ipfs://from-the-payer', HASH, 10)).wait();
+    expect((await core.getEvidence(disputeId)).length).to.equal(9);
   });
 });
 

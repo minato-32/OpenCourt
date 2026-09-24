@@ -11,8 +11,9 @@ import {IEligibility} from "../interfaces/IEligibility.sol";
 ///         dispute is about. Built for pallet-revive on Paseo Asset Hub.
 ///
 /// Phase-2 mechanics on top of the Phase-1 MVP:
-///  - EVIDENCE: submitEvidence(id, cid) is event-only (no storage), callable
-///    Drawing..Revealing.
+///  - EVIDENCE: submitEvidence(id, cid, contentHash, sizeBytes) records a bounded pointer on
+///    chain and emits the event, callable Drawing..Revealing. Bounded by MAX_URI_BYTES and
+///    MAX_EVIDENCE_PER_SUBMITTER so it can never bloat state.
 ///  - K-SLOT WEIGHTING: a juror who stakes N*minStake owns weight = N slots. Each
 ///    slot self-selects independently (keccak(seed, juror, slot) < drawThreshold),
 ///    each locks minStake, each is independently slashed. One commit / one reveal
@@ -81,6 +82,8 @@ contract ArbitratorCore is IArbitrator {
     uint16 internal constant MAX_QSTAR_RATIO = 6_000; // FR-CR-02: q* <= 0.60 (spec §7 band 0.5-0.6)
     uint32 internal constant MAX_PANEL = 15;
     uint8 internal constant MAX_CHOICES = 8; // K <= 8
+    uint16 internal constant MAX_URI_BYTES = 128; // bounds one evidence pointer
+    uint32 internal constant MAX_EVIDENCE_PER_SUBMITTER = 8; // bounds one submitter per dispute
 
     // ------------------------------------------------------------------ state
     CourtConfig public config;
@@ -109,6 +112,16 @@ contract ArbitratorCore is IArbitrator {
         bytes32 commitment;
     }
 
+    /// @dev One evidence pointer. The chain stores who, what hash, when and how big; the bytes
+    ///      themselves live off chain under `uri`.
+    struct EvidenceRecord {
+        address submitter;
+        bytes32 contentHash; // sha256 of the referenced bytes, so a juror can detect substitution
+        uint64 submittedAt;
+        uint32 sizeBytes;
+        string uri;
+    }
+
     struct Dispute {
         address app;
         uint8 choices;
@@ -132,6 +145,8 @@ contract ArbitratorCore is IArbitrator {
     mapping(uint256 => mapping(address => JurorRound)) private _jurorRound;
     mapping(uint256 => mapping(address => mapping(uint16 => bool))) private _slotClaimed;
     mapping(uint256 => mapping(uint8 => uint32)) private _votes; // disputeId => choice => weight
+    mapping(uint256 => EvidenceRecord[]) private _evidenceOf; // disputeId => evidence
+    mapping(uint256 => mapping(address => uint32)) private _evidenceCount; // disputeId => submitter => count
 
     mapping(address => uint256) public staked; // free stake
     mapping(address => uint64) public activeAt; // block from which stake is eligible
@@ -184,6 +199,8 @@ contract ArbitratorCore is IArbitrator {
     error TransferFailed();
     error NothingToWithdraw();
     error AppNotContract();
+    error BadEvidence();
+    error EvidenceCapReached();
 
     constructor(CourtConfig memory cfg, address eligibilityPolicy) {
         if (eligibilityPolicy == address(0)) revert BadConfig("eligibility");
@@ -282,17 +299,51 @@ contract ArbitratorCore is IArbitrator {
     }
 
     // -------------------------------------------------------------- evidence
-    /// @notice Attach an evidence pointer (e.g. an IPFS CID) to a live dispute.
-    /// @dev Callable by ANYONE while the dispute is open for argument — from the
-    ///      moment it is Drawing until it leaves Revealing. Purely event-emitting:
-    ///      no storage is written, so evidence can never bloat state or brick a
-    ///      dispute. The protocol never interprets the pointer.
-    function submitEvidence(uint256 disputeId, string calldata cid) external {
+    /// @notice Attach an evidence pointer (an IPFS CID) to a live dispute.
+    /// @dev Callable by ANYONE while the dispute is open for argument — from the moment it is
+    ///      Drawing until it leaves Revealing. The protocol never interprets the pointer.
+    ///
+    ///      The record is kept ON CHAIN, unlike the event-only first cut. The spec puts the URI in
+    ///      the event log and only metadata in storage, which is the right shape once an indexer
+    ///      exists; with no indexer a juror client cannot read past logs at all, so the pointer
+    ///      would be unreachable exactly when it is needed. Bloat is bounded instead:
+    ///      MAX_URI_BYTES per pointer and MAX_EVIDENCE_PER_SUBMITTER per address per dispute.
+    ///      The event is still emitted for indexers that do exist.
+    function submitEvidence(
+        uint256 disputeId,
+        string calldata cid,
+        bytes32 contentHash,
+        uint32 sizeBytes
+    ) external {
         DisputeState st = _disputes[disputeId].state;
         if (st != DisputeState.Drawing && st != DisputeState.Committing && st != DisputeState.Revealing) {
             revert WrongState();
         }
+        if (bytes(cid).length == 0 || bytes(cid).length > MAX_URI_BYTES) revert BadEvidence();
+        if (_evidenceCount[disputeId][msg.sender] >= MAX_EVIDENCE_PER_SUBMITTER) revert EvidenceCapReached();
+
+        _evidenceCount[disputeId][msg.sender] += 1;
+        _evidenceOf[disputeId].push(
+            EvidenceRecord({
+                submitter: msg.sender,
+                contentHash: contentHash,
+                submittedAt: uint64(block.number),
+                sizeBytes: sizeBytes,
+                uri: cid
+            })
+        );
+
         emit EvidenceSubmitted(disputeId, msg.sender, cid);
+    }
+
+    /// @notice Every evidence pointer attached to a dispute, oldest first.
+    function getEvidence(uint256 disputeId) external view returns (EvidenceRecord[] memory) {
+        return _evidenceOf[disputeId];
+    }
+
+    /// @notice How many pointers `submitter` has attached to `disputeId`.
+    function evidenceCountOf(uint256 disputeId, address submitter) external view returns (uint32) {
+        return _evidenceCount[disputeId][submitter];
     }
 
     // -------------------------------------------------------------- disputes

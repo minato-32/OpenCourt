@@ -130,12 +130,22 @@
   },
   {
     "inputs": [],
+    "name": "BadEvidence",
+    "type": "error"
+  },
+  {
+    "inputs": [],
     "name": "BadReveal",
     "type": "error"
   },
   {
     "inputs": [],
     "name": "DrawClosed",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "EvidenceCapReached",
     "type": "error"
   },
   {
@@ -890,6 +900,30 @@
         "internalType": "uint256",
         "name": "disputeId",
         "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "submitter",
+        "type": "address"
+      }
+    ],
+    "name": "evidenceCountOf",
+    "outputs": [
+      {
+        "internalType": "uint32",
+        "name": "",
+        "type": "uint32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "disputeId",
+        "type": "uint256"
       }
     ],
     "name": "finalize",
@@ -983,6 +1017,52 @@
         "internalType": "struct ArbitratorCore.Dispute",
         "name": "",
         "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "disputeId",
+        "type": "uint256"
+      }
+    ],
+    "name": "getEvidence",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "address",
+            "name": "submitter",
+            "type": "address"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "contentHash",
+            "type": "bytes32"
+          },
+          {
+            "internalType": "uint64",
+            "name": "submittedAt",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint32",
+            "name": "sizeBytes",
+            "type": "uint32"
+          },
+          {
+            "internalType": "string",
+            "name": "uri",
+            "type": "string"
+          }
+        ],
+        "internalType": "struct ArbitratorCore.EvidenceRecord[]",
+        "name": "",
+        "type": "tuple[]"
       }
     ],
     "stateMutability": "view",
@@ -1200,6 +1280,16 @@
         "internalType": "string",
         "name": "cid",
         "type": "string"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "contentHash",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "uint32",
+        "name": "sizeBytes",
+        "type": "uint32"
       }
     ],
     "name": "submitEvidence",
