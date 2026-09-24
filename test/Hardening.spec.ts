@@ -35,7 +35,7 @@ async function deployCore(cfg: Cfg, eligAddr?: string) {
     elig = await e.getAddress();
   }
   const Core = await ethers.getContractFactory('ArbitratorCore');
-  const core = (await Core.deploy(cfg, elig)) as any;
+  const core = (await Core.deploy(cfg, elig, 0n)) as any;
   await core.waitForDeployment();
   return core;
 }
@@ -232,7 +232,7 @@ describe('Hardening — FR-CR-02 q* underpayment guard', () => {
     // spec §7 worked example: panel 7, s = 100, f = 5, beta 10%, theta 20%
     // -> incoherent 2, coherent 5, potShare 3.2, q* = 10 / 18.2 = 0.549 -> ACCEPTED.
     const ok = baseCfg(treasury.address, { panelSize: 7n, jurorFee: 5n, betaBps: 1000n });
-    const core = await Core.deploy(ok, eligAddr);
+    const core = await Core.deploy(ok, eligAddr, 0n);
     await core.waitForDeployment();
     await (await reg.createCourt(ok, eligAddr)).wait();
     await reg.validateConfig(ok, eligAddr); // pure dry-run must not revert
@@ -241,7 +241,7 @@ describe('Hardening — FR-CR-02 q* underpayment guard', () => {
     // -> potShare 6.4, q* = 20 / 29.4 = 0.68 > 0.60 -> REJECTED. Raise the FEE,
     // not the penalty. The core and the registry must agree exactly (parity).
     const bad = baseCfg(treasury.address, { panelSize: 7n, jurorFee: 3n, betaBps: 2000n });
-    await expect(Core.deploy(bad, eligAddr)).to.be.revertedWithCustomError(Core, 'BadConfig').withArgs(
+    await expect(Core.deploy(bad, eligAddr, 0n)).to.be.revertedWithCustomError(Core, 'BadConfig').withArgs(
       'jurorsUnderpaid',
     );
     await expect(reg.createCourt(bad, eligAddr)).to.be.revertedWithCustomError(reg, 'BadConfig').withArgs(
@@ -267,8 +267,8 @@ describe('Hardening — PoP gating (presence-only registry)', () => {
     await pop.waitForDeployment();
 
     // The policy reflects the registry's presence flag verbatim.
-    expect(await pop.isEligible(verified.address)).to.equal(true);
-    expect(await pop.isEligible(unverified.address)).to.equal(false);
+    expect(await pop.weightOf(verified.address, 0n)).to.equal(1n);
+    expect(await pop.weightOf(unverified.address, 0n)).to.equal(0n);
 
     // And it gates seating end-to-end.
     const core = await deployCore(baseCfg(treasury.address), await pop.getAddress());

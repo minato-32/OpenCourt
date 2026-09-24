@@ -29,7 +29,7 @@ async function deployCourt(cfg: Cfg) {
   const elig = await Elig.deploy();
   await elig.waitForDeployment();
   const Core = await ethers.getContractFactory('ArbitratorCore');
-  const core = (await Core.deploy(cfg, await elig.getAddress())) as any;
+  const core = (await Core.deploy(cfg, await elig.getAddress(), 0n)) as any;
   await core.waitForDeployment();
   return core;
 }

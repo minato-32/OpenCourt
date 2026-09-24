@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import {IArbitrator} from "../interfaces/IArbitrator.sol";
 import {IArbitrable} from "../interfaces/IArbitrable.sol";
 import {IZKPassportRegistry} from "../interfaces/IZKPassportRegistry.sol";
+import {IEligibility} from "../interfaces/IEligibility.sol";
 
 /// @dev Test-only. A settable attestation registry so PopGatedEligibility can be
 ///      exercised without the real (off-chain-issued) ZKPassportRegistry deployment.
@@ -88,4 +89,42 @@ contract MockArbitrable is IArbitrable {
     }
 
     receive() external payable {}
+}
+
+/// @dev Test-only. An eligibility policy that misbehaves in each way FR-EL-02 must survive:
+///      reverting, burning gas, or returning something that is not one word.
+contract HostileEligibility is IEligibility {
+    enum Mode { Ok, Revert, GasBomb, Garbage }
+
+    Mode public mode;
+    uint256 public allowed = 1;
+
+    function set(Mode m) external {
+        mode = m;
+    }
+
+    function setAllowed(uint256 a) external {
+        allowed = a;
+    }
+
+    function weightOf(address, uint96) external view returns (uint256) {
+        if (mode == Mode.Revert) revert("hostile");
+        if (mode == Mode.GasBomb) {
+            uint256 x;
+            // Burn far past the cap the core allows.
+            for (uint256 i = 0; i < 1_000_000; i++) x = uint256(keccak256(abi.encode(x, i)));
+            return x;
+        }
+        if (mode == Mode.Garbage) {
+            assembly {
+                mstore(0, 1)
+                return(0, 8) // eight bytes, not a word
+            }
+        }
+        return allowed;
+    }
+
+    function policyDescriptor() external pure returns (string memory) {
+        return "hostile: test policy";
+    }
 }

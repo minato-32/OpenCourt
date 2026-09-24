@@ -5,6 +5,7 @@ import {
   arbitrationCost,
   courtConfig,
   drawTarget,
+  policyDescriptor,
   qStar,
   registryInfo,
   type CourtConfig,
@@ -18,6 +19,7 @@ export function CourtCard({ court }: { court: CourtDeployment }) {
   const [target, setTarget] = useState<bigint | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [gate, setGate] = useState<{ issuer: string; cooldownBlocks: bigint } | null>(null);
+  const [policy, setPolicy] = useState<string>('');
 
   useEffect(() => {
     setGate(null);
@@ -30,6 +32,17 @@ export function CourtCard({ court }: { court: CourtDeployment }) {
       live = false;
     };
   }, [court.registry]);
+
+  useEffect(() => {
+    let live = true;
+    setPolicy('');
+    policyDescriptor(court.core)
+      .then((p) => live && setPolicy(p))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [court.core]);
 
   useEffect(() => {
     let live = true;
@@ -84,6 +97,12 @@ export function CourtCard({ court }: { court: CourtDeployment }) {
             <Fact k="rebind cooldown" v={gate ? `${gate.cooldownBlocks} blocks` : '…'} />
             <Fact k="policy" v={short(court.eligibility, 10)} mono />
           </div>
+        </div>
+      )}
+
+      {policy && (
+        <div className="policy-line">
+          eligibility rule — <span className="mono">{policy}</span>
         </div>
       )}
 

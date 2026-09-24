@@ -85,10 +85,13 @@ contract ArbitratorCore is IArbitrator {
     uint16 internal constant MAX_URI_BYTES = 128; // bounds one evidence pointer
     uint32 internal constant MAX_EVIDENCE_PER_SUBMITTER = 8; // bounds one submitter per dispute
     uint256 internal constant MAX_EXCLUDED_PARTIES = 16; // bounds the parties an app may declare
+    uint256 internal constant ELIGIBILITY_GAS_CAP = 100_000; // FR-EL-02: a policy cannot burn the call
 
     // ------------------------------------------------------------------ state
     CourtConfig public config;
     IEligibility public immutable eligibility;
+    /// @notice Identifier this court passes to its eligibility policy; 0 when deployed standalone.
+    uint96 public immutable courtId;
     bytes32 public immutable configHash;
     uint256 public immutable arbCost; // grossed-up arbitration cost, cached at deploy
 
@@ -208,7 +211,7 @@ contract ArbitratorCore is IArbitrator {
     error EvidenceCapReached();
     error TooManyParties();
 
-    constructor(CourtConfig memory cfg, address eligibilityPolicy) {
+    constructor(CourtConfig memory cfg, address eligibilityPolicy, uint96 id) {
         if (eligibilityPolicy == address(0)) revert BadConfig("eligibility");
         if (cfg.panelSize == 0 || cfg.panelSize > MAX_PANEL || cfg.panelSize % 2 == 0) revert BadConfig("panelSize");
         if (cfg.minStake == 0) revert BadConfig("minStake");
@@ -267,6 +270,7 @@ contract ArbitratorCore is IArbitrator {
 
         config = cfg;
         eligibility = IEligibility(eligibilityPolicy);
+        courtId = id;
         configHash = keccak256(abi.encode(cfg));
 
         // Gross-up: cost * (BPS - take) >= panelSize * jurorFee, so after the take is
@@ -299,9 +303,39 @@ contract ArbitratorCore is IArbitrator {
         emit Unstaked(msg.sender, amount);
     }
 
-    /// @notice Voting weight = number of independent slots a juror can field.
-    function weightOf(address juror) public view returns (uint256) {
+    /// @notice Slots a juror has staked for, before the eligibility policy has its say.
+    function stakeSlotsOf(address juror) public view returns (uint256) {
         return staked[juror] / config.minStake;
+    }
+
+    /// @notice Slots a juror may actually field: what they staked for, capped by the policy.
+    /// @dev The cap direction matters. Stake custody stays entirely in this contract, so a policy
+    ///      can only ever reduce a juror's weight, never conjure slots the stake does not back.
+    function weightOf(address juror) public view returns (uint256) {
+        uint256 slots = stakeSlotsOf(juror);
+        if (slots == 0) return 0;
+        uint256 allowed = _policyWeight(juror);
+        return allowed < slots ? allowed : slots;
+    }
+
+    /// @dev FR-EL-02: gas-capped staticcall, fail closed. A policy that reverts, runs out of gas or
+    ///      returns something other than one word yields zero — locked out, never let in, and never
+    ///      able to brick the court for everybody else.
+    function _policyWeight(address juror) private view returns (uint256) {
+        (bool ok, bytes memory ret) = address(eligibility).staticcall{gas: ELIGIBILITY_GAS_CAP}(
+            abi.encodeCall(IEligibility.weightOf, (juror, courtId))
+        );
+        if (!ok || ret.length != 32) return 0;
+        return abi.decode(ret, (uint256));
+    }
+
+    /// @notice What the court's policy says it enforces; empty when the policy does not say.
+    function policyDescriptor() external view returns (string memory) {
+        (bool ok, bytes memory ret) = address(eligibility).staticcall{gas: ELIGIBILITY_GAS_CAP}(
+            abi.encodeCall(IEligibility.policyDescriptor, ())
+        );
+        if (!ok || ret.length == 0) return "";
+        return abi.decode(ret, (string));
     }
 
     // -------------------------------------------------------------- evidence
@@ -434,9 +468,11 @@ contract ArbitratorCore is IArbitrator {
 
         uint64 aAt = activeAt[msg.sender];
         if (aAt == 0 || block.number < aAt) revert NotEligible();
+        // weightOf folds the policy in: zero means either no stake or not eligible. Separate the
+        // two so a juror is told which one applies.
+        if (stakeSlotsOf(msg.sender) == 0) revert InsufficientStake();
         uint256 weight = weightOf(msg.sender);
-        if (weight == 0) revert InsufficientStake();
-        if (!eligibility.isEligible(msg.sender)) revert NotEligible();
+        if (weight == 0) revert NotEligible();
 
         // Reject an unavailable (zero) blockhash: the seed must anchor to a real
         // block in [drawBlock+1, drawBlock+256]. With drawWindow <= 255 and the

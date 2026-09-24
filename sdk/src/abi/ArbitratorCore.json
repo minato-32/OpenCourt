@@ -92,6 +92,11 @@
         "internalType": "address",
         "name": "eligibilityPolicy",
         "type": "address"
+      },
+      {
+        "internalType": "uint96",
+        "name": "id",
+        "type": "uint96"
       }
     ],
     "stateMutability": "nonpayable",
@@ -820,6 +825,19 @@
     "type": "function"
   },
   {
+    "inputs": [],
+    "name": "courtId",
+    "outputs": [
+      {
+        "internalType": "uint96",
+        "name": "",
+        "type": "uint96"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [
       {
         "internalType": "uint8",
@@ -1287,6 +1305,19 @@
     "type": "function"
   },
   {
+    "inputs": [],
+    "name": "policyDescriptor",
+    "outputs": [
+      {
+        "internalType": "string",
+        "name": "",
+        "type": "string"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [
       {
         "internalType": "uint256",
@@ -1327,6 +1358,25 @@
     "name": "stake",
     "outputs": [],
     "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "juror",
+        "type": "address"
+      }
+    ],
+    "name": "stakeSlotsOf",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
     "type": "function"
   },
   {

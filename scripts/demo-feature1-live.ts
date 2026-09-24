@@ -264,7 +264,7 @@ async function main() {
   );
   const core = await instantiate(
     deployer.signer, 'ArbitratorCore', 'core/ArbitratorCore.sol', 'ArbitratorCore',
-    [cfg, eligibility],
+    [cfg, eligibility, 0],
   );
   const escrowAddr = await instantiate(
     deployer.signer, 'SimpleEscrow', 'examples/SimpleEscrow.sol', 'SimpleEscrow', [core],

@@ -125,7 +125,10 @@ contract CourtRegistry {
         returns (uint256 courtId, address arbitrator)
     {
         validateConfig(cfg, eligibility);
-        ArbitratorCore core = new ArbitratorCore(cfg, eligibility);
+        // The id is known before the deploy, so the court can carry it and pass it to its policy;
+        // a module serving several courts needs to know which one is asking.
+        uint256 nextId = courtCount + 1;
+        ArbitratorCore core = new ArbitratorCore(cfg, eligibility, uint96(nextId));
         arbitrator = address(core);
         // Factory-deployed => the registry KNOWS the bytecode is a genuine
         // ArbitratorCore => verified.

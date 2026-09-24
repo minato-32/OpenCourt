@@ -33,7 +33,7 @@ describe('ArbitratorCore — full resolution loop', () => {
     };
 
     const Core = await ethers.getContractFactory('ArbitratorCore');
-    const core = await Core.deploy(cfg, await elig.getAddress());
+    const core = await Core.deploy(cfg, await elig.getAddress(), 0n);
     await core.waitForDeployment();
 
     const Escrow = await ethers.getContractFactory('SimpleEscrow');

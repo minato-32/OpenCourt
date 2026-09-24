@@ -210,7 +210,7 @@ async function main() {
   );
   const arbitrator = await instantiate(
     api, signer, 'ArbitratorCore',
-    'core/ArbitratorCore.sol', 'ArbitratorCore', [demoCourtConfig(treasury), eligibility],
+    'core/ArbitratorCore.sol', 'ArbitratorCore', [demoCourtConfig(treasury), eligibility, 0],
   );
   const escrow = await instantiate(
     api, signer, 'SimpleEscrow',

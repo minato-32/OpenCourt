@@ -45,7 +45,7 @@ async function deployCore(cfg: Cfg) {
   const elig = await Elig.deploy();
   await elig.waitForDeployment();
   const Core = await ethers.getContractFactory('ArbitratorCore');
-  const core = (await Core.deploy(cfg, await elig.getAddress())) as any;
+  const core = (await Core.deploy(cfg, await elig.getAddress(), 0n)) as any;
   await core.waitForDeployment();
   return core;
 }
@@ -465,7 +465,7 @@ describe('FR-CR-02 — q* underpayment guard (core constructor)', () => {
     const bad = baseCfg(treasury.address, {
       panelSize: 7n, minStake: 100n, jurorFee: 3n, betaBps: 2000n, thetaBps: 2000n,
     });
-    await expect(Core.deploy(bad, await elig.getAddress()))
+    await expect(Core.deploy(bad, await elig.getAddress(), 0n))
       .to.be.revertedWithCustomError(Core, 'BadConfig')
       .withArgs('jurorsUnderpaid');
   });
@@ -495,11 +495,11 @@ describe('FR-CR-02 — q* underpayment guard (core constructor)', () => {
     const over = { panelSize: 7n, minStake: 100n, betaBps: 2000n, thetaBps: 2000n };
     // f = 3 -> q* 0.680 reject; f = 5 -> q* 0.637 still reject; f = 8 -> q* 0.581 accept.
     for (const fee of [3n, 5n]) {
-      await expect(Core.deploy(baseCfg(treasury.address, { ...over, jurorFee: fee }), eligAddr))
+      await expect(Core.deploy(baseCfg(treasury.address, { ...over, jurorFee: fee }), eligAddr, 0n))
         .to.be.revertedWithCustomError(Core, 'BadConfig')
         .withArgs('jurorsUnderpaid');
     }
-    const fixed = await Core.deploy(baseCfg(treasury.address, { ...over, jurorFee: 8n }), eligAddr);
+    const fixed = await Core.deploy(baseCfg(treasury.address, { ...over, jurorFee: 8n }), eligAddr, 0n);
     await fixed.waitForDeployment();
   });
 
@@ -513,11 +513,11 @@ describe('FR-CR-02 — q* underpayment guard (core constructor)', () => {
 
     // incoherent = 1 / 3 = 0, coherent = 1, expectedPotShare = 0.
     // f 10 -> q* = 10 / 20 = 0.50 -> accepted (and NOT a revert/panic).
-    const one = await Core.deploy(baseCfg(treasury.address, { panelSize: 1n, jurorFee: 10n }), eligAddr);
+    const one = await Core.deploy(baseCfg(treasury.address, { panelSize: 1n, jurorFee: 10n }), eligAddr, 0n);
     await one.waitForDeployment();
     expect(await one.arbitrationCost('0x')).to.equal(10n);
     // f 5 -> q* = 10 / 15 = 0.667 -> rejected, on the same zero-pot arithmetic.
-    await expect(Core.deploy(baseCfg(treasury.address, { panelSize: 1n, jurorFee: 5n }), eligAddr))
+    await expect(Core.deploy(baseCfg(treasury.address, { panelSize: 1n, jurorFee: 5n }), eligAddr, 0n))
       .to.be.revertedWithCustomError(Core, 'BadConfig')
       .withArgs('jurorsUnderpaid');
   });
@@ -565,14 +565,14 @@ describe('FR-CR-02 — core / CourtRegistry validation parity', () => {
       if (row.accept) {
         // Core constructor, the registry's pure dry-run, and the registry factory
         // must ALL admit it.
-        const core = await Core.deploy(cfg, eligAddr);
+        const core = await Core.deploy(cfg, eligAddr, 0n);
         await core.waitForDeployment();
         await reg.validateConfig(cfg, eligAddr);
         await (await reg.createCourt(cfg, eligAddr)).wait();
         // ...and an already-deployed core must be admissible under the same config.
         await (await reg.registerCourt(await core.getAddress(), cfg)).wait();
       } else {
-        await expect(Core.deploy(cfg, eligAddr), `core must reject: ${row.name}`)
+        await expect(Core.deploy(cfg, eligAddr, 0n), `core must reject: ${row.name}`)
           .to.be.revertedWithCustomError(Core, 'BadConfig')
           .withArgs('jurorsUnderpaid');
         await expect(reg.validateConfig(cfg, eligAddr), `validateConfig must reject: ${row.name}`)

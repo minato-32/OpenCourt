@@ -118,19 +118,41 @@ export const activeAtOf = async (core: string, who: string) =>
 export const weightOf = async (core: string, who: string) =>
   (await read(core, coreAbi, 'weightOf', [who]))[0] as bigint;
 
-/** IEligibility is one function; no need to ship a whole artifact for it. */
+/** IEligibility is two functions; no need to ship a whole artifact for it. */
 export const eligibilityAbi: ethers.InterfaceAbi = [
   {
     type: 'function',
-    name: 'isEligible',
+    name: 'weightOf',
     stateMutability: 'view',
-    inputs: [{ name: 'juror', type: 'address' }],
-    outputs: [{ name: '', type: 'bool' }],
+    inputs: [
+      { name: 'juror', type: 'address' },
+      { name: 'courtId', type: 'uint96' },
+    ],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+  {
+    type: 'function',
+    name: 'policyDescriptor',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'string' }],
   },
 ];
 
-export const isEligible = async (eligibility: string, who: string) =>
-  (await read(eligibility, eligibilityAbi, 'isEligible', [who]))[0] as boolean;
+/** Slots the policy allows this juror, before the court caps it by stake. */
+export const policyWeightOf = async (eligibility: string, who: string, courtId = 0) =>
+  (await read(eligibility, eligibilityAbi, 'weightOf', [who, courtId]))[0] as bigint;
+
+export const isEligible = async (eligibility: string, who: string, courtId = 0) =>
+  (await policyWeightOf(eligibility, who, courtId)) > 0n;
+
+/** What the court's policy says it enforces, read through the court so a broken policy reads empty. */
+export const policyDescriptor = async (core: string) =>
+  (await read(core, coreAbi, 'policyDescriptor'))[0] as string;
+
+/** Slots a juror has staked for, before the policy caps them. */
+export const stakeSlotsOf = async (core: string, who: string) =>
+  (await read(core, coreAbi, 'stakeSlotsOf', [who]))[0] as bigint;
 
 /** The subset of PersonhoodRegistry the console reads. */
 export const registryAbiMin: ethers.InterfaceAbi = [

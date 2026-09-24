@@ -84,18 +84,18 @@ describe('PersonhoodRegistry', () => {
     const pop = (await Pop.deploy(await reg.getAddress())) as any;
     await pop.waitForDeployment();
 
-    expect(await pop.isEligible(alice.address)).to.equal(false);
+    expect(await pop.weightOf(alice.address, 0n)).to.equal(0n);
     await (await reg.attest(alice.address, CRED_A)).wait();
-    expect(await pop.isEligible(alice.address)).to.equal(true);
+    expect(await pop.weightOf(alice.address, 0n)).to.equal(1n);
 
     // Revocation removes eligibility immediately, without touching any court.
     await (await reg.revoke(alice.address)).wait();
-    expect(await pop.isEligible(alice.address)).to.equal(false);
+    expect(await pop.weightOf(alice.address, 0n)).to.equal(0n);
 
     // Issuer handover works and the new issuer can attest.
     await (await reg.transferIssuer(bob.address)).wait();
     await expect(reg.connect(issuer).attest(bob.address, CRED_B)).to.be.revertedWithCustomError(reg, 'NotIssuer');
     await (await reg.connect(bob).attest(bob.address, CRED_B)).wait();
-    expect(await pop.isEligible(bob.address)).to.equal(true);
+    expect(await pop.weightOf(bob.address, 0n)).to.equal(1n);
   });
 });

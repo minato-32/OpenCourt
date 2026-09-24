@@ -59,9 +59,9 @@ describe('AppealCoordinator — multi-round appeal', () => {
     const eligAddr = await elig.getAddress();
 
     const Core = await ethers.getContractFactory('ArbitratorCore');
-    const courtA: any = await Core.deploy(courtCfg(treasury.address, 3n), eligAddr);
+    const courtA: any = await Core.deploy(courtCfg(treasury.address, 3n), eligAddr, 0n);
     await courtA.waitForDeployment();
-    const courtB: any = await Core.deploy(courtCfg(treasury.address, 7n), eligAddr);
+    const courtB: any = await Core.deploy(courtCfg(treasury.address, 7n), eligAddr, 0n);
     await courtB.waitForDeployment();
 
     const Coord = await ethers.getContractFactory('AppealCoordinator');
@@ -124,9 +124,9 @@ describe('AppealCoordinator — multi-round appeal', () => {
     const Elig = await ethers.getContractFactory('StakeWeightedEligibility');
     const elig = await Elig.deploy(); await elig.waitForDeployment();
     const Core = await ethers.getContractFactory('ArbitratorCore');
-    const courtA: any = await Core.deploy(courtCfg(treasury.address, 3n), await elig.getAddress());
+    const courtA: any = await Core.deploy(courtCfg(treasury.address, 3n), await elig.getAddress(), 0n);
     await courtA.waitForDeployment();
-    const courtB: any = await Core.deploy(courtCfg(treasury.address, 7n), await elig.getAddress());
+    const courtB: any = await Core.deploy(courtCfg(treasury.address, 7n), await elig.getAddress(), 0n);
     await courtB.waitForDeployment();
     const Coord = await ethers.getContractFactory('AppealCoordinator');
     const coord: any = await Coord.deploy([await courtA.getAddress(), await courtB.getAddress()], 100n);
@@ -162,7 +162,7 @@ describe('AppealCoordinator — multi-round appeal', () => {
     const Elig = await ethers.getContractFactory('StakeWeightedEligibility');
     const elig = await Elig.deploy(); await elig.waitForDeployment();
     const Core = await ethers.getContractFactory('ArbitratorCore');
-    const court: any = await Core.deploy(courtCfg(treasury.address, 3n), await elig.getAddress());
+    const court: any = await Core.deploy(courtCfg(treasury.address, 3n), await elig.getAddress(), 0n);
     await court.waitForDeployment();
     const App = await ethers.getContractFactory('MockArbitrable');
     const app: any = await App.deploy(await court.getAddress());

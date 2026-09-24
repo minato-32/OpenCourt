@@ -163,7 +163,7 @@ async function main() {
   );
   const core = await instantiate(
     dep.signer, 'ArbitratorCore', 'core/ArbitratorCore.sol', 'ArbitratorCore',
-    [courtConfig(dep.h160), eligibility],
+    [courtConfig(dep.h160), eligibility, 0],
   );
   const escrow = await instantiate(
     dep.signer, 'SimpleEscrow', 'examples/SimpleEscrow.sol', 'SimpleEscrow', [core],
