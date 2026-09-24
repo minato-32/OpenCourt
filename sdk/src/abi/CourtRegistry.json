@@ -247,8 +247,18 @@
             "type": "uint16"
           },
           {
+            "internalType": "uint16",
+            "name": "pinFeeBps",
+            "type": "uint16"
+          },
+          {
             "internalType": "address",
             "name": "treasury",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "pinner",
             "type": "address"
           }
         ],
@@ -373,8 +383,18 @@
             "type": "uint16"
           },
           {
+            "internalType": "uint16",
+            "name": "pinFeeBps",
+            "type": "uint16"
+          },
+          {
             "internalType": "address",
             "name": "treasury",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "pinner",
             "type": "address"
           }
         ],
@@ -484,8 +504,18 @@
             "type": "uint16"
           },
           {
+            "internalType": "uint16",
+            "name": "pinFeeBps",
+            "type": "uint16"
+          },
+          {
             "internalType": "address",
             "name": "treasury",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "pinner",
             "type": "address"
           }
         ],

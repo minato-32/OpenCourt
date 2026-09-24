@@ -89,8 +89,18 @@
             "type": "uint16"
           },
           {
+            "internalType": "uint16",
+            "name": "pinFeeBps",
+            "type": "uint16"
+          },
+          {
             "internalType": "address",
             "name": "treasury",
+            "type": "address"
+          },
+          {
+            "internalType": "address",
+            "name": "pinner",
             "type": "address"
           }
         ],
@@ -115,6 +125,11 @@
   {
     "inputs": [],
     "name": "AlreadyCommitted",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "AlreadyReported",
     "type": "error"
   },
   {
@@ -313,6 +328,31 @@
       {
         "indexed": false,
         "internalType": "uint32",
+        "name": "unavailableWeight",
+        "type": "uint32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint32",
+        "name": "participation",
+        "type": "uint32"
+      }
+    ],
+    "name": "DisputeVoided",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "disputeId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint32",
         "name": "seatCount",
         "type": "uint32"
       }
@@ -462,6 +502,31 @@
       }
     ],
     "name": "EvidenceSubmitted",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "disputeId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "juror",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint32",
+        "name": "seats",
+        "type": "uint32"
+      }
+    ],
+    "name": "EvidenceUnavailable",
     "type": "event"
   },
   {
@@ -976,8 +1041,18 @@
         "type": "uint16"
       },
       {
+        "internalType": "uint16",
+        "name": "pinFeeBps",
+        "type": "uint16"
+      },
+      {
         "internalType": "address",
         "name": "treasury",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "pinner",
         "type": "address"
       }
     ],
@@ -1234,6 +1309,11 @@
             "type": "bool"
           },
           {
+            "internalType": "bool",
+            "name": "voided",
+            "type": "bool"
+          },
+          {
             "internalType": "enum ArbitratorCore.DisputeState",
             "name": "state",
             "type": "uint8"
@@ -1271,6 +1351,11 @@
           {
             "internalType": "uint32",
             "name": "revealedCount",
+            "type": "uint32"
+          },
+          {
+            "internalType": "uint32",
+            "name": "unavailableWeight",
             "type": "uint32"
           },
           {
@@ -1453,6 +1538,25 @@
         "internalType": "uint256",
         "name": "disputeId",
         "type": "uint256"
+      }
+    ],
+    "name": "isVoided",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "disputeId",
+        "type": "uint256"
       },
       {
         "internalType": "address",
@@ -1482,6 +1586,11 @@
           {
             "internalType": "bool",
             "name": "revealed",
+            "type": "bool"
+          },
+          {
+            "internalType": "bool",
+            "name": "reportedUnavailable",
             "type": "bool"
           },
           {
@@ -1587,6 +1696,19 @@
       }
     ],
     "name": "redeliverRuling",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "disputeId",
+        "type": "uint256"
+      }
+    ],
+    "name": "reportUnavailable",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
