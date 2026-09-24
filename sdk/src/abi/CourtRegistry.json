@@ -177,6 +177,11 @@
             "type": "uint256"
           },
           {
+            "internalType": "uint256",
+            "name": "evidenceBond",
+            "type": "uint256"
+          },
+          {
             "internalType": "uint64",
             "name": "evidenceBlocks",
             "type": "uint64"
@@ -298,6 +303,11 @@
             "type": "uint256"
           },
           {
+            "internalType": "uint256",
+            "name": "evidenceBond",
+            "type": "uint256"
+          },
+          {
             "internalType": "uint64",
             "name": "evidenceBlocks",
             "type": "uint64"
@@ -401,6 +411,11 @@
           {
             "internalType": "uint256",
             "name": "drawThreshold",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "evidenceBond",
             "type": "uint256"
           },
           {

@@ -47,6 +47,11 @@
   },
   {
     "inputs": [],
+    "name": "OnlyApp",
+    "type": "error"
+  },
+  {
+    "inputs": [],
     "name": "TooEarly",
     "type": "error"
   },
@@ -124,6 +129,25 @@
       }
     ],
     "name": "CoordDisputeCreated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "coordId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "evidenceGroupId",
+        "type": "uint256"
+      }
+    ],
+    "name": "EvidenceGroupLinked",
     "type": "event"
   },
   {
@@ -428,6 +452,25 @@
         "type": "uint256"
       }
     ],
+    "name": "evidenceGroupOf",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "coordId",
+        "type": "uint256"
+      }
+    ],
     "name": "finalizeAppeal",
     "outputs": [],
     "stateMutability": "nonpayable",
@@ -489,6 +532,16 @@
             "internalType": "uint256",
             "name": "childId",
             "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "evidenceGroupId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bool",
+            "name": "groupLinked",
+            "type": "bool"
           }
         ],
         "internalType": "struct AppealCoordinator.CoordDispute",
@@ -497,6 +550,24 @@
       }
     ],
     "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "coordId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "appGroupId",
+        "type": "uint256"
+      }
+    ],
+    "name": "linkEvidenceGroup",
+    "outputs": [],
+    "stateMutability": "nonpayable",
     "type": "function"
   },
   {

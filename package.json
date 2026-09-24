@@ -22,7 +22,8 @@
     "console:build": "pnpm --filter @getcourt/console build",
     "demo:feature1": "pnpm compile:pvm && ts-node scripts/demo-feature1-live.ts",
     "compile:pvm": "hardhat compile --network paseo",
-    "deploy:pop": "pnpm compile:pvm && ts-node scripts/deploy-personhood-court.ts"
+    "deploy:pop": "pnpm compile:pvm && ts-node scripts/deploy-personhood-court.ts",
+    "abi": "ts-node scripts/sync-abi.ts"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.0",

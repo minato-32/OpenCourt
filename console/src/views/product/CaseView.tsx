@@ -1,7 +1,7 @@
 // The case as a person sees it: what is being decided, the evidence, where it stands, what to do.
 
 import { useEffect, useState } from 'react';
-import { read } from '../../lib/chain';
+import { read, simulate, write } from '../../lib/chain';
 import { CHAIN, coreAbi, escrowAbi, type CourtConfig, type CourtDeployment } from '../../lib/contracts';
 import {
   DisputeState,
@@ -23,6 +23,7 @@ import { eventsForDispute, type IndexedEvent } from '../../lib/indexer';
 import { blocksLeft, pas, short } from '../../lib/format';
 import type { WalletAccount } from '../../lib/wallet';
 import { DisputeActions } from '../DisputeActions';
+import { EvidenceFiling } from './EvidenceFiling';
 
 /** What the escrow app calls each ruling, so a juror reads options instead of numbers. */
 const CHOICE_LABEL: Record<number, { title: string; detail: string }> = {
@@ -60,6 +61,7 @@ export function CaseView({
   const [rounds, setRounds] = useState<Record<string, JurorRound>>({});
   const [parties, setParties] = useState<{ payer: string; payee: string; amount: bigint } | null>(null);
   const [timeline, setTimeline] = useState<IndexedEvent[]>([]);
+  const [bondMsg, setBondMsg] = useState('');
 
   useEffect(() => {
     let live = true;
@@ -99,6 +101,23 @@ export function CaseView({
       live = false;
     };
   }, [court.core, court.escrow, dispute.id, dispute.state, account, head]);
+
+  const me = account?.h160.toLowerCase();
+  const isParty = !!parties && (me === parties.payer.toLowerCase() || me === parties.payee.toLowerCase());
+
+  async function reclaimBond(index: number) {
+    if (!account) return;
+    const params = [dispute.id, BigInt(index)];
+    const would = await simulate(account.ss58, court.core, coreAbi, 'reclaimEvidenceBond', params);
+    if (would) return setBondMsg(`Would revert: ${would.reason} — nothing signed.`);
+    try {
+      await write(account.account.polkadotSigner, court.core, coreAbi, 'reclaimEvidenceBond', params);
+      setBondMsg('Bond returned. Withdraw it from your balance whenever you like.');
+      onRefresh();
+    } catch (e: any) {
+      setBondMsg(e?.message ?? String(e));
+    }
+  }
 
   const deadline = phaseDeadline(dispute, cfg);
   const reason = noVerdictReason(dispute, cfg);
@@ -190,11 +209,34 @@ export function CaseView({
                     {(e.sizeBytes / 1024).toFixed(0)} KB
                   </div>
                   <div className="hint mono">sha256 {short(e.contentHash, 14)}</div>
+                  {e.bond > 0n && (
+                    <div className="muted">
+                      {pas(e.bond)} bond{e.bondReclaimed ? ' · returned' : decided ? ' · claimable' : ' · held'}
+                      {decided && !e.bondReclaimed && me === e.submitter.toLowerCase() && (
+                        <button className="btn ghost small" onClick={() => reclaimBond(e.index)}>
+                          Claim it back
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </li>
               );
             })}
           </ul>
         )}
+        {dispute.state === DisputeState.Evidence && (
+          <EvidenceFiling
+            court={court}
+            cfg={cfg}
+            disputeId={dispute.id}
+            account={account}
+            isParty={isParty}
+            onDone={onRefresh}
+          />
+        )}
+
+        {bondMsg && <div className="txline">{bondMsg}</div>}
+
         <p className="hint">
           The chain stores the pointer and the hash, never the bytes. A juror can check the file they
           downloaded against the hash recorded here.

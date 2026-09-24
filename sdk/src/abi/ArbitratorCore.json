@@ -19,6 +19,11 @@
             "type": "uint256"
           },
           {
+            "internalType": "uint256",
+            "name": "evidenceBond",
+            "type": "uint256"
+          },
+          {
             "internalType": "uint64",
             "name": "evidenceBlocks",
             "type": "uint64"
@@ -150,6 +155,22 @@
   },
   {
     "inputs": [],
+    "name": "BondNotReclaimable",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "required",
+        "type": "uint256"
+      }
+    ],
+    "name": "BondRequired",
+    "type": "error"
+  },
+  {
+    "inputs": [],
     "name": "DrawClosed",
     "type": "error"
   },
@@ -176,6 +197,11 @@
   {
     "inputs": [],
     "name": "NothingToWithdraw",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "OnlyApp",
     "type": "error"
   },
   {
@@ -299,6 +325,87 @@
     "inputs": [
       {
         "indexed": true,
+        "internalType": "contract IArbitrator",
+        "name": "_arbitrator",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "_evidenceGroupID",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "_party",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "string",
+        "name": "_evidence",
+        "type": "string"
+      }
+    ],
+    "name": "Evidence",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "disputeId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "submitter",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "name": "EvidenceBondPosted",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "disputeId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "submitter",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "name": "EvidenceBondReclaimed",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
         "internalType": "uint256",
         "name": "disputeId",
         "type": "uint256"
@@ -311,6 +418,25 @@
       }
     ],
     "name": "EvidenceClosed",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "disputeId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "evidenceGroupId",
+        "type": "uint256"
+      }
+    ],
+    "name": "EvidenceGroupLinked",
     "type": "event"
   },
   {
@@ -704,6 +830,19 @@
     "type": "function"
   },
   {
+    "inputs": [],
+    "name": "bondsHeld",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [
       {
         "internalType": "uint256",
@@ -764,6 +903,11 @@
       {
         "internalType": "uint256",
         "name": "drawThreshold",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "evidenceBond",
         "type": "uint256"
       },
       {
@@ -1028,6 +1172,25 @@
         "type": "uint256"
       }
     ],
+    "name": "evidenceGroupOf",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "disputeId",
+        "type": "uint256"
+      }
+    ],
     "name": "finalize",
     "outputs": [],
     "stateMutability": "nonpayable",
@@ -1116,6 +1279,11 @@
             "type": "uint256"
           },
           {
+            "internalType": "uint256",
+            "name": "evidenceGroupId",
+            "type": "uint256"
+          },
+          {
             "internalType": "bytes32",
             "name": "configHash",
             "type": "bytes32"
@@ -1160,6 +1328,16 @@
             "internalType": "uint32",
             "name": "sizeBytes",
             "type": "uint32"
+          },
+          {
+            "internalType": "uint128",
+            "name": "bond",
+            "type": "uint128"
+          },
+          {
+            "internalType": "bool",
+            "name": "bondReclaimed",
+            "type": "bool"
           },
           {
             "internalType": "string",
@@ -1331,6 +1509,24 @@
         "internalType": "uint256",
         "name": "disputeId",
         "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "appGroupId",
+        "type": "uint256"
+      }
+    ],
+    "name": "linkEvidenceGroup",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "disputeId",
+        "type": "uint256"
       }
     ],
     "name": "openDrawing",
@@ -1362,6 +1558,24 @@
       }
     ],
     "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "disputeId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "index",
+        "type": "uint256"
+      }
+    ],
+    "name": "reclaimEvidenceBond",
+    "outputs": [],
+    "stateMutability": "nonpayable",
     "type": "function"
   },
   {
@@ -1470,7 +1684,7 @@
     ],
     "name": "submitEvidence",
     "outputs": [],
-    "stateMutability": "nonpayable",
+    "stateMutability": "payable",
     "type": "function"
   },
   {

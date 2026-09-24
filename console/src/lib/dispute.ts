@@ -63,10 +63,14 @@ export interface Seat {
 }
 
 export interface EvidenceItem {
+  index: number;
   submitter: string;
   contentHash: string;
   submittedAt: bigint;
   sizeBytes: number;
+  /** Bond the filer posted. Zero for a party — they file free. */
+  bond: bigint;
+  bondReclaimed: boolean;
   uri: string;
 }
 
@@ -116,14 +120,21 @@ export async function getSeats(core: string, id: bigint): Promise<Seat[]> {
 /** Evidence pointers a dispute carries. Read from storage, so no indexer is required. */
 export async function getEvidence(core: string, id: bigint): Promise<EvidenceItem[]> {
   const rows = (await read(core, coreAbi, 'getEvidence', [id]))[0] as any[];
-  return rows.map((r) => ({
+  return rows.map((r, index) => ({
+    index,
     submitter: r.submitter,
     contentHash: r.contentHash,
     submittedAt: r.submittedAt,
     sizeBytes: Number(r.sizeBytes),
+    bond: r.bond as bigint,
+    bondReclaimed: r.bondReclaimed as boolean,
     uri: r.uri,
   }));
 }
+
+/** The ERC-1497 group this dispute's filings are logged under. */
+export const evidenceGroupOf = async (core: string, id: bigint) =>
+  (await read(core, coreAbi, 'evidenceGroupOf', [id]))[0] as bigint;
 
 export async function jurorRoundOf(core: string, id: bigint, juror: string): Promise<JurorRound> {
   const j = (await read(core, coreAbi, 'jurorRoundOf', [id, juror]))[0] as any;
