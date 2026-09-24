@@ -185,6 +185,11 @@
   },
   {
     "inputs": [],
+    "name": "TooManyParties",
+    "type": "error"
+  },
+  {
+    "inputs": [],
     "name": "TransferFailed",
     "type": "error"
   },
@@ -333,6 +338,25 @@
         "type": "uint256"
       },
       {
+        "indexed": true,
+        "internalType": "address",
+        "name": "party",
+        "type": "address"
+      }
+    ],
+    "name": "PartyExcluded",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "disputeId",
+        "type": "uint256"
+      },
+      {
         "indexed": false,
         "internalType": "enum ArbitratorCore.DisputeState",
         "name": "state",
@@ -403,6 +427,37 @@
       }
     ],
     "name": "SeatClaimed",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "disputeId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "juror",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint16",
+        "name": "slot",
+        "type": "uint16"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "vrfOutput",
+        "type": "uint256"
+      }
+    ],
+    "name": "SeatDisplaced",
     "type": "event"
   },
   {
@@ -773,7 +828,7 @@
       },
       {
         "internalType": "bytes",
-        "name": "",
+        "name": "extraData",
         "type": "bytes"
       }
     ],
@@ -1133,6 +1188,30 @@
         "internalType": "struct ArbitratorCore.SeatEntry[]",
         "name": "",
         "type": "tuple[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "disputeId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "who",
+        "type": "address"
+      }
+    ],
+    "name": "isExcluded",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
       }
     ],
     "stateMutability": "view",

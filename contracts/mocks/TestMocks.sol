@@ -71,6 +71,17 @@ contract MockArbitrable is IArbitrable {
         emit Ruling(arbitrator, disputeId, ruling, isFinal);
     }
 
+    /// @dev Test-only escape hatch: forward a raw call so a test can hit the core with calldata a
+    ///      well-behaved app would never build (an oversized party list, for instance).
+    function forward(address target, bytes calldata data) external payable {
+        (bool ok, bytes memory ret) = target.call{value: msg.value}(data);
+        if (!ok) {
+            assembly {
+                revert(add(ret, 0x20), mload(ret))
+            }
+        }
+    }
+
     /// @notice Pull this app's fee refund out of the core.
     function claimFees() external {
         arbitrator.withdraw();

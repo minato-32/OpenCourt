@@ -84,6 +84,7 @@ contract ArbitratorCore is IArbitrator {
     uint8 internal constant MAX_CHOICES = 8; // K <= 8
     uint16 internal constant MAX_URI_BYTES = 128; // bounds one evidence pointer
     uint32 internal constant MAX_EVIDENCE_PER_SUBMITTER = 8; // bounds one submitter per dispute
+    uint256 internal constant MAX_EXCLUDED_PARTIES = 16; // bounds the parties an app may declare
 
     // ------------------------------------------------------------------ state
     CourtConfig public config;
@@ -147,6 +148,7 @@ contract ArbitratorCore is IArbitrator {
     mapping(uint256 => mapping(uint8 => uint32)) private _votes; // disputeId => choice => weight
     mapping(uint256 => EvidenceRecord[]) private _evidenceOf; // disputeId => evidence
     mapping(uint256 => mapping(address => uint32)) private _evidenceCount; // disputeId => submitter => count
+    mapping(uint256 => mapping(address => bool)) private _excluded; // disputeId => barred from the panel
 
     mapping(address => uint256) public staked; // free stake
     mapping(address => uint64) public activeAt; // block from which stake is eligible
@@ -165,8 +167,11 @@ contract ArbitratorCore is IArbitrator {
     event Staked(address indexed juror, uint256 amount, uint64 activeAt);
     event Unstaked(address indexed juror, uint256 amount);
     event DisputeCreated(uint256 indexed disputeId, address indexed app, uint8 choices, uint64 drawBlock);
+    event PartyExcluded(uint256 indexed disputeId, address indexed party);
     event SeatGranted(uint256 indexed disputeId, address indexed juror, uint32 seatCount);
     event SeatClaimed(uint256 indexed disputeId, address indexed juror, uint16 slot, uint256 vrfOutput);
+    /// @notice A seat was pushed out of the panel by a claim with a lower vrf output.
+    event SeatDisplaced(uint256 indexed disputeId, address indexed juror, uint16 slot, uint256 vrfOutput);
     event DrawingClosed(uint256 indexed disputeId, uint32 seatCount);
     event PhaseAdvanced(uint256 indexed disputeId, DisputeState state);
     event PanelSeated(uint256 indexed disputeId, uint32 seatedWeight);
@@ -201,6 +206,7 @@ contract ArbitratorCore is IArbitrator {
     error AppNotContract();
     error BadEvidence();
     error EvidenceCapReached();
+    error TooManyParties();
 
     constructor(CourtConfig memory cfg, address eligibilityPolicy) {
         if (eligibilityPolicy == address(0)) revert BadConfig("eligibility");
@@ -360,7 +366,12 @@ contract ArbitratorCore is IArbitrator {
     }
 
     /// @inheritdoc IArbitrator
-    function createDispute(uint8 choices, bytes calldata)
+    /// @param extraData optional `abi.encode(address[])` — the parties to this dispute. They are
+    ///        barred from their own panel (FR-SL-07). The protocol still learns nothing about what
+    ///        the dispute is: it only ever compares these addresses to a seat claimant. An app that
+    ///        declares nobody keeps the old behaviour, and undeclared affiliates remain the
+    ///        documented residual risk.
+    function createDispute(uint8 choices, bytes calldata extraData)
         external
         payable
         noReentrant
@@ -386,7 +397,22 @@ contract ArbitratorCore is IArbitrator {
         d.feePot = msg.value;
         d.configHash = configHash;
 
+        if (extraData.length > 0) {
+            address[] memory parties = abi.decode(extraData, (address[]));
+            if (parties.length > MAX_EXCLUDED_PARTIES) revert TooManyParties();
+            for (uint256 i = 0; i < parties.length; i++) {
+                if (parties[i] == address(0)) continue;
+                _excluded[disputeId][parties[i]] = true;
+                emit PartyExcluded(disputeId, parties[i]);
+            }
+        }
+
         emit DisputeCreated(disputeId, msg.sender, choices, d.drawBlock);
+    }
+
+    /// @notice Whether `who` is barred from this dispute's panel.
+    function isExcluded(uint256 disputeId, address who) external view returns (bool) {
+        return _excluded[disputeId][who] || who == _disputes[disputeId].app;
     }
 
     /// @notice Claim jury seats once the draw is open. A juror claims EVERY one of
@@ -403,10 +429,8 @@ contract ArbitratorCore is IArbitrator {
         // real past block. (Audit CRITICAL fix.)
         if (block.number <= d.drawBlock) revert TooEarly();
         if (block.number > d.drawBlock + config.drawWindowBlocks) revert DrawClosed();
-        if (msg.sender == d.app) revert NotEligible(); // exclude the disputing app
-
-        uint32 target = drawTarget();
-        if (d.seatCount >= target) revert PanelFull();
+        // FR-SL-07: the app and every party it declared at creation are barred from their own panel.
+        if (msg.sender == d.app || _excluded[disputeId][msg.sender]) revert NotEligible();
 
         uint64 aAt = activeAt[msg.sender];
         if (aAt == 0 || block.number < aAt) revert NotEligible();
@@ -421,44 +445,80 @@ contract ArbitratorCore is IArbitrator {
         if (bh == bytes32(0)) revert DrawClosed();
         bytes32 seed = keccak256(abi.encodePacked(bh, disputeId, address(this)));
 
+        uint32 target = drawTarget();
         uint32 admitted = 0;
         for (uint256 k = 0; k < weight; k++) {
-            if (d.seatCount >= target) break; // panel over-draw full
             uint16 slot = uint16(k);
             if (_slotClaimed[disputeId][msg.sender][slot]) continue; // already claimed this round
             uint256 vrf = uint256(keccak256(abi.encodePacked(seed, msg.sender, slot)));
             if (vrf >= config.drawThreshold) continue; // slot did not self-select
 
-            // Lock one slot of stake.
-            staked[msg.sender] -= config.minStake;
-            _slotClaimed[disputeId][msg.sender][slot] = true;
-            _seatsOf[disputeId].push(
-                SeatEntry({
-                    juror: msg.sender,
-                    slot: slot,
-                    role: ROLE_RELEASED,
-                    settled: false,
-                    vrfOutput: vrf,
-                    slotStake: config.minStake
-                })
-            );
-            _jurorRound[disputeId][msg.sender].seatCount += 1;
-            d.seatCount += 1;
+            if (d.seatCount < target) {
+                _admit(disputeId, d, msg.sender, slot, vrf);
+                admitted += 1;
+                continue;
+            }
+
+            // FR-SL-04: the set is the LOWEST vrf outputs, not the first arrivals. Once the
+            // over-draw is full a better claim displaces the worst one; a worse claim is simply
+            // refused. Keeping the set capped is what stops an unbounded claim flood.
+            (uint256 worstIdx, uint256 worstVrf) = _worstSeat(disputeId);
+            if (vrf >= worstVrf) continue;
+            _evict(disputeId, d, worstIdx);
+            _admit(disputeId, d, msg.sender, slot, vrf);
             admitted += 1;
-            emit SeatClaimed(disputeId, msg.sender, slot, vrf);
-            emit SeatGranted(disputeId, msg.sender, d.seatCount);
         }
 
-        if (admitted == 0) revert NotEligible(); // no slot self-selected / no room
+        if (admitted == 0) revert NotEligible(); // no slot self-selected, or none good enough
+    }
 
-        // Fully over-drawn: advance immediately. Otherwise a permissionless
-        // closeDrawing() crank (after the window) advances a merely-full panel.
-        if (d.seatCount >= target) {
-            d.state = DisputeState.Committing;
-            d.commitDeadline = uint64(block.number) + config.commitBlocks;
-            emit DrawingClosed(disputeId, d.seatCount);
-            emit PhaseAdvanced(disputeId, DisputeState.Committing);
+    /// @dev Lock one slot of stake and record the seat.
+    function _admit(uint256 disputeId, Dispute storage d, address juror, uint16 slot, uint256 vrf) private {
+        staked[juror] -= config.minStake;
+        _slotClaimed[disputeId][juror][slot] = true;
+        _seatsOf[disputeId].push(
+            SeatEntry({
+                juror: juror,
+                slot: slot,
+                role: ROLE_RELEASED,
+                settled: false,
+                vrfOutput: vrf,
+                slotStake: config.minStake
+            })
+        );
+        _jurorRound[disputeId][juror].seatCount += 1;
+        d.seatCount += 1;
+        emit SeatClaimed(disputeId, juror, slot, vrf);
+        emit SeatGranted(disputeId, juror, d.seatCount);
+    }
+
+    /// @dev Index and value of the currently admitted seat with the highest (worst) vrf output.
+    function _worstSeat(uint256 disputeId) private view returns (uint256 idx, uint256 vrf) {
+        SeatEntry[] storage seats = _seatsOf[disputeId];
+        for (uint256 i = 0; i < seats.length; i++) {
+            if (seats[i].vrfOutput > vrf) {
+                vrf = seats[i].vrfOutput;
+                idx = i;
+            }
         }
+    }
+
+    /// @dev Remove a seat and return its locked stake, by swapping the last entry into its place.
+    ///      Displacement happens only during Drawing, before any role or vote exists, so nothing
+    ///      else references a seat by index yet.
+    function _evict(uint256 disputeId, Dispute storage d, uint256 idx) private {
+        SeatEntry[] storage seats = _seatsOf[disputeId];
+        SeatEntry memory gone = seats[idx];
+
+        staked[gone.juror] += gone.slotStake;
+        _slotClaimed[disputeId][gone.juror][gone.slot] = false;
+        _jurorRound[disputeId][gone.juror].seatCount -= 1;
+        d.seatCount -= 1;
+
+        seats[idx] = seats[seats.length - 1];
+        seats.pop();
+
+        emit SeatDisplaced(disputeId, gone.juror, gone.slot, gone.vrfOutput);
     }
 
     /// @notice Permissionless crank: close the draw window and open commit as long

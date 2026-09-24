@@ -123,6 +123,16 @@ export class JuryArbitrator {
     return this.client.write(signer, 'createDispute', [choices, extraData], fee);
   }
 
+  /** Encode the parties of a dispute so the court bars them from its own panel (FR-SL-07). */
+  static encodeParties(parties: string[]): string {
+    return ethers.AbiCoder.defaultAbiCoder().encode(['address[]'], [parties]);
+  }
+
+  /** Whether an address is barred from a dispute's panel. */
+  async isExcluded(disputeId: bigint | number, who: string): Promise<boolean> {
+    return (await this.client.read('isExcluded', [disputeId, who]))[0] as boolean;
+  }
+
   /** Grossed-up fee an app must prepay (jurors paid first; incl. app+protocol take). */
   async arbitrationCost(extraData: string = '0x'): Promise<bigint> {
     const r = await this.client.read('arbitrationCost', [extraData]);

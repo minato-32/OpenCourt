@@ -100,7 +100,11 @@ contract SimpleEscrow is IArbitrable {
         uint256 cost = arbitrator.arbitrationCost("");
         if (msg.value != cost) revert WrongFee(cost);
 
-        disputeId = arbitrator.createDispute{value: msg.value}(2, "");
+        // Declare both parties so neither can sit on the panel judging their own escrow.
+        address[] memory parties = new address[](2);
+        parties[0] = e.payer;
+        parties[1] = e.payee;
+        disputeId = arbitrator.createDispute{value: msg.value}(2, abi.encode(parties));
         disputeToEscrow[disputeId] = escrowId;
         feePayer[escrowId] = msg.sender; // reclaim any fee refund back to whoever paid
         e.state = State.Disputed;

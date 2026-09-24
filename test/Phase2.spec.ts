@@ -153,9 +153,12 @@ describe('Phase-2 — alternates promotion', () => {
     await (await escrow.connect(payer).dispute(1n, { value: cost })).wait();
     const disputeId = 1n;
 
-    // Reach the draw, all five claim -> panel over-drawn to drawTarget, auto-Committing.
+    // Reach the draw, all five claim -> panel over-drawn to drawTarget. The draw still runs its
+    // full window, because a lower vrf output arriving late must be able to displace a seat.
     await mine(2);
     for (const j of jurors) await (await core.connect(j).claimSeat(disputeId)).wait();
+    await mine(101);
+    await (await core.closeDrawing(disputeId)).wait();
     expect(await core.disputeState(disputeId)).to.equal(2); // Committing
 
     // Reconstruct the sortition ranking off-chain (lowest keccak = higher priority).

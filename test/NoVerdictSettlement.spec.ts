@@ -166,16 +166,18 @@ describe('FR-ST-02 — genuine tie, every seated juror revealed', () => {
 
   it('returns a RELEASED alternate its stake with NO fee while revealers are paid', async () => {
     const [, treasury] = await ethers.getSigners();
-    // Panel 3 with drawTarget = ceil(1.4 * 3) = 5. Five jurors claim, so the draw
-    // is fully over-drawn (it auto-advances to Committing on the 5th claim) and two
-    // admitted seats end up as unneeded alternates.
+    // Panel 3 with drawTarget = ceil(1.4 * 3) = 5. Five jurors claim, filling the over-draw, and
+    // two admitted seats end up as unneeded alternates. The draw is not closed early even when
+    // full: a lower vrf output can still arrive inside the window and displace a seated claim.
     const cfg = baseCfg(treasury.address);
     const { core, app, jurors, cost, disputeId } = await openDispute(cfg, 5, 5);
     expect(cost).to.equal(30n); // panel 3 * fee 10
 
     await mine(2);
     for (const j of jurors) await (await core.connect(j).claimSeat(disputeId)).wait();
-    expect(await core.disputeState(disputeId)).to.equal(2); // Committing (over-drawn)
+    await mine(101);
+    await (await core.closeDrawing(disputeId)).wait();
+    expect(await core.disputeState(disputeId)).to.equal(2); // Committing
 
     // All five commit, each to a DISTINCT choice, so whichever three the sortition
     // ranks as primaries reveal three different choices -> a guaranteed tie.
