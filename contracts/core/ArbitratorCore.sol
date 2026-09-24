@@ -752,7 +752,9 @@ contract ArbitratorCore is IArbitrator {
         // now 0) all resolve to ok == false here instead of bubbling a revert the
         // way solc's `try/catch` would for a codeless target. On failure the ruling
         // stays pending and can be pulled later via redeliverRuling().
-        (bool ok, ) = d.app.call(abi.encodeCall(IArbitrable.rule, (disputeId, d.ruling)));
+        // isFinal is true: this court has one round and nothing here can overturn its verdict. A
+        // coordinator sitting in front of it decides finality for the app behind it.
+        (bool ok, ) = d.app.call(abi.encodeCall(IArbitrable.rule, (disputeId, uint256(d.ruling), true)));
         if (ok) {
             d.ruled = true;
             emit RulingDelivered(disputeId, d.ruling);

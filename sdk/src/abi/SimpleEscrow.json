@@ -182,6 +182,25 @@
     "inputs": [
       {
         "indexed": true,
+        "internalType": "uint256",
+        "name": "escrowId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "ruling",
+        "type": "uint256"
+      }
+    ],
+    "name": "ProvisionalRuling",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
         "internalType": "contract IArbitrator",
         "name": "arbitrator",
         "type": "address"
@@ -197,6 +216,12 @@
         "internalType": "uint256",
         "name": "ruling",
         "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "bool",
+        "name": "isFinal",
+        "type": "bool"
       }
     ],
     "name": "Ruling",
@@ -393,6 +418,25 @@
     "inputs": [
       {
         "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "provisionalRuling",
+    "outputs": [
+      {
+        "internalType": "uint8",
+        "name": "",
+        "type": "uint8"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
         "name": "escrowId",
         "type": "uint256"
       }
@@ -413,6 +457,11 @@
         "internalType": "uint256",
         "name": "ruling",
         "type": "uint256"
+      },
+      {
+        "internalType": "bool",
+        "name": "isFinal",
+        "type": "bool"
       }
     ],
     "name": "rule",

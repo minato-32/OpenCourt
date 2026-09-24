@@ -35,7 +35,7 @@ contract RevertingApp is IArbitrable {
         disputeId = arbitrator.createDispute{value: msg.value}(choices, "");
     }
 
-    function rule(uint256, uint256) external pure {
+    function rule(uint256, uint256, bool) external pure {
         revert("RevertingApp: nope");
     }
 
@@ -50,6 +50,8 @@ contract MockArbitrable is IArbitrable {
     uint256 public lastDisputeId;
     uint256 public lastRuling;
     bool public ruled;
+    bool public lastWasFinal;
+    uint256 public provisionalCount;
 
     constructor(address arbitratorAddress) {
         arbitrator = IArbitrator(arbitratorAddress);
@@ -59,12 +61,14 @@ contract MockArbitrable is IArbitrable {
         disputeId = arbitrator.createDispute{value: msg.value}(choices, "");
     }
 
-    function rule(uint256 disputeId, uint256 ruling) external {
+    function rule(uint256 disputeId, uint256 ruling, bool isFinal) external {
         require(msg.sender == address(arbitrator), "only arbitrator");
         lastDisputeId = disputeId;
         lastRuling = ruling;
-        ruled = true;
-        emit Ruling(arbitrator, disputeId, ruling);
+        lastWasFinal = isFinal;
+        ruled = isFinal;
+        provisionalCount += isFinal ? 0 : 1;
+        emit Ruling(arbitrator, disputeId, ruling, isFinal);
     }
 
     /// @notice Pull this app's fee refund out of the core.

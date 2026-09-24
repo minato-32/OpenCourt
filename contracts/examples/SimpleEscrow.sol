@@ -39,6 +39,9 @@ contract SimpleEscrow is IArbitrable {
     /// @notice Pull-payment balances: winners, released payees, and reclaimed fees.
     mapping(address => uint256) public pendingWithdrawals;
 
+    /// @notice Last non-final ruling seen for an escrow, for display only. Zero means none.
+    mapping(uint256 => uint8) public provisionalRuling;
+
     uint8 internal constant RELEASE = 1; // pay the payee
     uint8 internal constant REFUND = 2; // refund the payer
 
@@ -54,6 +57,7 @@ contract SimpleEscrow is IArbitrable {
     event EscrowReleased(uint256 indexed escrowId);
     event EscrowDisputed(uint256 indexed escrowId, uint256 indexed disputeId);
     event EscrowResolved(uint256 indexed escrowId, uint256 ruling);
+    event ProvisionalRuling(uint256 indexed escrowId, uint256 ruling);
     event Credited(address indexed account, uint256 amount);
     event Withdrawn(address indexed account, uint256 amount);
     event FeesClaimed(uint256 indexed escrowId, address indexed payer, uint256 amount);
@@ -104,21 +108,31 @@ contract SimpleEscrow is IArbitrable {
     }
 
     /// @inheritdoc IArbitrable
-    /// @dev Pull-payment: credits the winner instead of pushing, so this call can
-    ///      never revert on the recipient and freeze the dispute. `noReentrant` still
-    ///      guards the state machine even though no external value transfer happens.
-    function rule(uint256 disputeId, uint256 ruling) external noReentrant {
+    /// @dev Pull-payment: credits the winner instead of pushing, so this call can never revert on
+    ///      the recipient and freeze the dispute. `noReentrant` still guards the state machine even
+    ///      though no external value transfer happens.
+    ///
+    ///      A ruling that is NOT final is recorded and shown, never acted on: moving the escrow on a
+    ///      provisional result would pay out money a later appeal round could reverse.
+    function rule(uint256 disputeId, uint256 ruling, bool isFinal) external noReentrant {
         if (msg.sender != address(arbitrator)) revert OnlyArbitrator();
         uint256 escrowId = disputeToEscrow[disputeId];
         Escrow storage e = escrows[escrowId];
         if (e.state != State.Disputed) revert WrongState();
+
+        emit Ruling(arbitrator, disputeId, ruling, isFinal);
+
+        if (!isFinal) {
+            provisionalRuling[escrowId] = uint8(ruling);
+            emit ProvisionalRuling(escrowId, ruling);
+            return;
+        }
 
         e.state = State.Resolved;
         // ruling 1 = release to payee; 2 or 0 (refuse/tie) = refund the payer.
         address winner = ruling == RELEASE ? e.payee : e.payer;
         _credit(winner, e.amount);
 
-        emit Ruling(arbitrator, disputeId, ruling);
         emit EscrowResolved(escrowId, ruling);
     }
 

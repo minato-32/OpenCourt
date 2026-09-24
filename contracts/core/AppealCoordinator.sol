@@ -134,7 +134,10 @@ contract AppealCoordinator is IArbitrator, IArbitrable {
     // ------------------------------------------------------------ IArbitrable
     /// @notice A court delivers its round ruling here. Opens the appeal window (or
     ///         finalizes immediately when no higher court / no window).
-    function rule(uint256 childId, uint256 ruling) external noReentrant {
+    /// @param isFinal ignored: a court has a single round, so its own verdict is always final to
+    ///        itself. Finality for the app behind this coordinator is decided here, by whether an
+    ///        appeal window is still open.
+    function rule(uint256 childId, uint256 ruling, bool isFinal) external noReentrant {
         uint256 coordId = _link[msg.sender][childId];
         if (coordId == 0) revert UnknownDispute();
         CoordDispute storage cd = _disputes[coordId];
@@ -144,12 +147,16 @@ contract AppealCoordinator is IArbitrator, IArbitrable {
         cd.ruling = uint8(ruling);
         cd.state = CoordState.Appealable;
         cd.appealDeadline = uint64(block.number) + appealWindowBlocks;
-        emit Ruling(IArbitrator(msg.sender), childId, ruling);
+        emit Ruling(IArbitrator(msg.sender), childId, ruling, isFinal);
         emit RoundRuled(coordId, cd.round, cd.ruling, cd.appealDeadline);
 
-        // No appeals possible (window disabled or highest court) -> deliver now.
+        // No appeals possible (window disabled or highest court) -> this is already final.
         if (appealWindowBlocks == 0 || uint256(cd.round) + 1 >= courts.length) {
             _finalize(coordId, cd);
+        } else {
+            // Appealable: hand the app the provisional result so it can show it, flagged not final
+            // so it cannot act on a ruling a later round may reverse.
+            _deliver(coordId, cd, false);
         }
     }
 
@@ -185,7 +192,7 @@ contract AppealCoordinator is IArbitrator, IArbitrable {
     function redeliverRuling(uint256 coordId) external noReentrant {
         CoordDispute storage cd = _disputes[coordId];
         if (cd.state != CoordState.Resolved || cd.ruled) revert WrongState();
-        _deliver(coordId, cd);
+        _deliver(coordId, cd, true);
     }
 
     /// @notice Pull any fee residue this contract accumulated (see reclaimFees).
@@ -216,14 +223,16 @@ contract AppealCoordinator is IArbitrator, IArbitrable {
     function _finalize(uint256 coordId, CoordDispute storage cd) private {
         cd.state = CoordState.Resolved;
         emit FinalRuling(coordId, cd.ruling);
-        _deliver(coordId, cd);
+        _deliver(coordId, cd, true);
     }
 
     /// @dev Revert-proof: a hostile/codeless app can never freeze the chain.
-    function _deliver(uint256 coordId, CoordDispute storage cd) private {
-        (bool ok, ) = cd.app.call(abi.encodeCall(IArbitrable.rule, (coordId, cd.ruling)));
+    /// @dev A provisional delivery must never mark the dispute delivered, and a failed one must
+    ///      never brick the chain of rounds — hence the low-level call and the isFinal guard.
+    function _deliver(uint256 coordId, CoordDispute storage cd, bool isFinal) private {
+        (bool ok, ) = cd.app.call(abi.encodeCall(IArbitrable.rule, (coordId, uint256(cd.ruling), isFinal)));
         if (ok) {
-            cd.ruled = true;
+            if (isFinal) cd.ruled = true;
         } else {
             emit RulingDeliveryFailed(coordId);
         }

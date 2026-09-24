@@ -196,6 +196,12 @@
         "internalType": "uint256",
         "name": "ruling",
         "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "bool",
+        "name": "isFinal",
+        "type": "bool"
       }
     ],
     "name": "Ruling",
@@ -535,6 +541,11 @@
         "internalType": "uint256",
         "name": "ruling",
         "type": "uint256"
+      },
+      {
+        "internalType": "bool",
+        "name": "isFinal",
+        "type": "bool"
       }
     ],
     "name": "rule",

@@ -87,6 +87,13 @@ describe('AppealCoordinator — multi-round appeal', () => {
     expect(ruling).to.equal(2n);
     expect(finalized).to.equal(false);
 
+    // FR-DL-04: the app is told the provisional result but must not act on it. REFUND would have
+    // credited the payer; the escrow is still Disputed and nobody has been paid.
+    expect(await escrow.provisionalRuling(1n)).to.equal(2n);
+    expect((await escrow.escrows(1n)).state).to.equal(2); // Disputed
+    expect(await escrow.pendingWithdrawals(payer.address)).to.equal(0n);
+    expect(await escrow.pendingWithdrawals(payee.address)).to.equal(0n);
+
     // Appeal to court B (panel 7).
     const costA = await coord.appealCost(coordId);
     expect(costA).to.equal(70n); // court B: 7 * 10
@@ -100,7 +107,10 @@ describe('AppealCoordinator — multi-round appeal', () => {
     expect(ruling).to.equal(1n);
     expect(finalized).to.equal(true);
 
-    // Final ruling RELEASE -> escrow credited the payee (pull-payment); they can withdraw.
+    // Only now, on the FINAL ruling, does the escrow move — and it moves to RELEASE, the opposite
+    // of the provisional result it was shown. Acting early would have paid the wrong party.
+    expect((await escrow.escrows(1n)).state).to.equal(3); // Resolved
+    expect(await escrow.pendingWithdrawals(payer.address)).to.equal(0n);
     expect(await escrow.pendingWithdrawals(payee.address)).to.equal(AMOUNT);
     await (await escrow.connect(payee).withdraw()).wait();
     expect(await escrow.pendingWithdrawals(payee.address)).to.equal(0n);
@@ -131,11 +141,41 @@ describe('AppealCoordinator — multi-round appeal', () => {
     await runRound(courtA, 1n, jurors.slice(0, 3), 1); // RELEASE
     expect(await coord.disputeState(1n)).to.equal(2); // Appealable
 
+    // Provisional only: shown, not acted on.
+    expect(await escrow.provisionalRuling(1n)).to.equal(1n);
+    expect(await escrow.pendingWithdrawals(payee.address)).to.equal(0n);
+
     // Let the appeal window lapse, then finalize -> delivers to the escrow.
     await mine(101);
     await (await coord.finalizeAppeal(1n)).wait();
     expect(await coord.disputeState(1n)).to.equal(3); // Resolved
     const [ruling] = await coord.currentRuling(1n);
     expect(ruling).to.equal(1n);
+    expect(await escrow.pendingWithdrawals(payee.address)).to.equal(1000n);
+  });
+
+  it('a court wired straight to an app delivers one ruling, already final', async () => {
+    const signers = await ethers.getSigners();
+    const [, payer, payee, treasury] = signers;
+    const jurors = signers.slice(4, 7);
+
+    const Elig = await ethers.getContractFactory('StakeWeightedEligibility');
+    const elig = await Elig.deploy(); await elig.waitForDeployment();
+    const Core = await ethers.getContractFactory('ArbitratorCore');
+    const court: any = await Core.deploy(courtCfg(treasury.address, 3n), await elig.getAddress());
+    await court.waitForDeployment();
+    const App = await ethers.getContractFactory('MockArbitrable');
+    const app: any = await App.deploy(await court.getAddress());
+    await app.waitForDeployment();
+
+    const cost = await court.arbitrationCost('0x');
+    await (await app.createDispute(2, { value: cost })).wait();
+    await runRound(court, 1n, jurors, 1);
+
+    // No coordinator in front, so there is no round that could overturn this one.
+    expect(await app.ruled()).to.equal(true);
+    expect(await app.lastWasFinal()).to.equal(true);
+    expect(await app.provisionalCount()).to.equal(0n);
+    expect(await app.lastRuling()).to.equal(1n);
   });
 });
