@@ -134,6 +134,14 @@ function loadArtifact(solFile: string, contractName: string): { abi: ethers.Inte
     throw new Error(`Artifact not found: ${p} — run \`pnpm compile\` first.`);
   }
   const json = JSON.parse(fs.readFileSync(p, 'utf8'));
+  // `hardhat test` recompiles for the EVM and overwrites this directory, so a deploy run right
+  // after a test run would ship EVM bytecode and fail as EvmConstructorNonEmptyData. Fail loudly.
+  if (!String(json.bytecode).startsWith('0x50564d')) {
+    throw new Error(
+      `${contractName} artifact is not a PolkaVM blob (missing PVM magic). ` +
+        'Run `pnpm compile --network paseo` before deploying.',
+    );
+  }
   return { abi: json.abi, bytecode: json.bytecode };
 }
 

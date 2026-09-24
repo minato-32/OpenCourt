@@ -67,6 +67,12 @@
       "ArbitratorCore": "0x6968b0ec3aee7b64264bea741c8e433a7dbb7705",
       "SimpleEscrow": "0x1677a8fb11d3af34888e0f517ebb28e2bd83007f",
       "StakeWeightedEligibility": "0xcc20f20434b91c3a5ffe74c503783b176b847fd0"
+    },
+    {
+      "reason": "personhood court deployed before ArbitratorCore gained on-chain evidence records",
+      "ArbitratorCore": "0xd7fa6740a759e26b52d725ce465993623bcfba99",
+      "SimpleEscrow": "0xf4968b37ca9995ce1a70138d1ed128acd6c9f826",
+      "PersonhoodRegistry": "0x167c95497140b03e4d52f262a78fe67c51c059a4"
     }
   ],
   "chainLevelFindings": [
@@ -77,5 +83,25 @@
     "ReviveApi.balance returns a U256 as four little-endian u64 limbs, not a bigint.",
     "A contract revert arrives as a SUCCESSFUL dispatch whose return flags have bit 0 set; the payload is the custom-error selector.",
     "Block time is ~2s, and signAndSubmit waits for finalization (~12 blocks per extrinsic), so phase windows must be sized in blocks accordingly."
-  ]
+  ],
+  "demoCourt": {
+    "note": "Personhood-gated court carrying the seeded demo case with on-chain evidence pointers.",
+    "PersonhoodRegistry": "0x9aadf7831075ce11a5ca45f0f283134b68714f92",
+    "PopGatedEligibility": "0xd9a3cbfcb0a6e4349d6b0a8fd67101ba46101d1e",
+    "ArbitratorCore": "0xb05968370cb80b57b7db645a93f92f57a78085b9",
+    "SimpleEscrow": "0xf3c9f28344a222e6f49dba22c50114ed8dc97589",
+    "demoDisputeId": 2,
+    "evidence": [
+      {
+        "file": "evidence-1-payer-statement.docx",
+        "sha256": "0x2f8e789328b9092479b37435079aa55caa158b3cae21eac54111b16203e6a0d8",
+        "bytes": 37876
+      },
+      {
+        "file": "evidence-2-payee-response.docx",
+        "sha256": "0x9078543cd0a5d335aed051f513d8ab78229c91b713bc5e707631d396b9a31b68",
+        "bytes": 37805
+      }
+    ]
+  }
 }

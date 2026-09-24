@@ -11,7 +11,7 @@
     "test": "hardhat test",
     "coverage": "hardhat coverage",
     "papi:add": "papi add paseohub -w wss://paseo-asset-hub-next-rpc.polkadot.io",
-    "deploy": "ts-node scripts/deploy.ts",
+    "deploy": "pnpm compile:pvm && ts-node scripts/deploy.ts",
     "check-size": "hardhat size-contracts",
     "verify": "hardhat verify",
     "clean": "hardhat clean && rm -rf typechain-types dist",
@@ -20,7 +20,9 @@
     "typecheck": "tsc --noEmit",
     "console": "pnpm --filter @getcourt/console dev",
     "console:build": "pnpm --filter @getcourt/console build",
-    "demo:feature1": "ts-node scripts/demo-feature1-live.ts"
+    "demo:feature1": "pnpm compile:pvm && ts-node scripts/demo-feature1-live.ts",
+    "compile:pvm": "hardhat compile --network paseo",
+    "deploy:pop": "pnpm compile:pvm && ts-node scripts/deploy-personhood-court.ts"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.0",
