@@ -20,6 +20,11 @@
           },
           {
             "internalType": "uint64",
+            "name": "evidenceBlocks",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
             "name": "activationDelayBlocks",
             "type": "uint64"
           },
@@ -287,6 +292,25 @@
       }
     ],
     "name": "DrawingClosed",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "disputeId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint32",
+        "name": "evidenceCount",
+        "type": "uint32"
+      }
+    ],
+    "name": "EvidenceClosed",
     "type": "event"
   },
   {
@@ -744,6 +768,11 @@
       },
       {
         "internalType": "uint64",
+        "name": "evidenceBlocks",
+        "type": "uint64"
+      },
+      {
+        "internalType": "uint64",
         "name": "activationDelayBlocks",
         "type": "uint64"
       },
@@ -1048,6 +1077,11 @@
           },
           {
             "internalType": "uint64",
+            "name": "evidenceDeadline",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
             "name": "drawBlock",
             "type": "uint64"
           },
@@ -1289,6 +1323,19 @@
       }
     ],
     "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "disputeId",
+        "type": "uint256"
+      }
+    ],
+    "name": "openDrawing",
+    "outputs": [],
+    "stateMutability": "nonpayable",
     "type": "function"
   },
   {

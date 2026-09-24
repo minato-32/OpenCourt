@@ -79,6 +79,7 @@ interface CourtConfig {
   minStake: bigint;
   jurorFee: bigint;
   drawThreshold: bigint;
+  evidenceBlocks: bigint;
   activationDelayBlocks: bigint;
   drawDelayBlocks: bigint;
   drawWindowBlocks: bigint;
@@ -111,6 +112,7 @@ function demoCourtConfig(treasury: string): CourtConfig {
     // Demo: near-max threshold so every eligible juror self-selects and the tiny
     // local panel fills first-come. Lower this for real sortition pressure.
     drawThreshold: (1n << 256n) - 1n,
+    evidenceBlocks: 10n, // FR-DL-02: the record closes before any draw
     activationDelayBlocks: 1n, // anti just-in-time staking
     drawDelayBlocks: 2n, // Δ before the draw opens (future-blockhash seed)
     drawWindowBlocks: 50n, // window to collect seat claims

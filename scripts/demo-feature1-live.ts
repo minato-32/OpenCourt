@@ -244,6 +244,7 @@ async function main() {
     minStake: 100n * PAS_EVM, // contract-side units
     jurorFee: 10n * PAS_EVM,
     drawThreshold: (1n << 256n) - 1n, // demo: every eligible juror self-selects
+    evidenceBlocks: 10n, // FR-DL-02: the record closes before any draw
     activationDelayBlocks: 1n,
     drawDelayBlocks: 2n,
     drawWindowBlocks: DRAW_WINDOW,

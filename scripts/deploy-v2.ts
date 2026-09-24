@@ -129,6 +129,7 @@ function courtConfig(treasury: string) {
     minStake: 100n * PAS_EVM,
     jurorFee: 10n * PAS_EVM,
     drawThreshold: (1n << 256n) - 1n,
+    evidenceBlocks: 10n, // FR-DL-02: the record closes before any draw
     activationDelayBlocks: 1n,
     drawDelayBlocks: 2n,
     drawWindowBlocks: 150n,

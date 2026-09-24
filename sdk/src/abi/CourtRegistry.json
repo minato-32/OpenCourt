@@ -178,6 +178,11 @@
           },
           {
             "internalType": "uint64",
+            "name": "evidenceBlocks",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
             "name": "activationDelayBlocks",
             "type": "uint64"
           },
@@ -294,6 +299,11 @@
           },
           {
             "internalType": "uint64",
+            "name": "evidenceBlocks",
+            "type": "uint64"
+          },
+          {
+            "internalType": "uint64",
             "name": "activationDelayBlocks",
             "type": "uint64"
           },
@@ -392,6 +402,11 @@
             "internalType": "uint256",
             "name": "drawThreshold",
             "type": "uint256"
+          },
+          {
+            "internalType": "uint64",
+            "name": "evidenceBlocks",
+            "type": "uint64"
           },
           {
             "internalType": "uint64",

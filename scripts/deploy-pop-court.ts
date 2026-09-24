@@ -61,6 +61,7 @@ interface CourtConfig {
   minStake: bigint;
   jurorFee: bigint;
   drawThreshold: bigint;
+  evidenceBlocks: bigint;
   activationDelayBlocks: bigint;
   drawDelayBlocks: bigint;
   drawWindowBlocks: bigint;
@@ -81,6 +82,7 @@ function demoCourtConfig(treasury: string): CourtConfig {
     minStake: 1_000_000_000_000n,
     jurorFee: 100_000_000_000n,
     drawThreshold: (1n << 256n) - 1n,
+    evidenceBlocks: 10n, // FR-DL-02: the record closes before any draw
     activationDelayBlocks: 1n,
     drawDelayBlocks: 2n,
     drawWindowBlocks: 50n,

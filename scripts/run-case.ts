@@ -167,7 +167,7 @@ async function fund(from: PolkadotSigner, ss58: string, planck: bigint) {
 const commitmentOf = (id: bigint, juror: string, choice: number, salt: string) =>
   ethers.solidityPackedKeccak256(['uint256', 'address', 'uint8', 'bytes32'], [id, juror, choice, salt]);
 
-const STATE = ['None', 'Drawing', 'Committing', 'Revealing', 'Resolved'] as const;
+const STATE = ['None', 'Evidence', 'Drawing', 'Committing', 'Revealing', 'Resolved'] as const;
 
 /** Deterministic salt per juror, so a resumed run can still reveal what an earlier run committed. */
 const saltFor = (id: bigint, juror: string) =>
@@ -234,7 +234,7 @@ async function main() {
     const state = Number(d.state);
     console.log(`\n-- ${STATE[state]} (seats ${d.seatCount}, revealed ${d.revealedCount})`);
 
-    if (state === 4) {
+    if (state === 5) {
       const [ruling, tied] = await read(CORE, coreAbi, 'currentRuling', [id]);
       console.log(`   ruling ${ruling} · tied ${tied}`);
       const pas = (v: bigint) => `${(Number(v) / 1e18).toFixed(2)} PAS`;
@@ -254,6 +254,14 @@ async function main() {
     }
 
     if (state === 1) {
+      // The record is open; close it once its window lapses. Only then is the draw block set.
+      await waitFor(BigInt(d.evidenceDeadline) + 1n, 'evidence window closes');
+      await send(issuer.signer, CORE, coreAbi, 'openDrawing', [id]);
+      console.log('   record frozen, draw opened');
+      continue;
+    }
+
+    if (state === 2) {
       const drawBlock = BigInt(d.drawBlock);
       if (Number(d.seatCount) < Number(cfg[8])) {
         await waitFor(drawBlock + 1n, 'draw opens');
@@ -274,7 +282,7 @@ async function main() {
       continue;
     }
 
-    if (state === 2) {
+    if (state === 3) {
       for (const [i, j] of jurors.entries()) {
         const round: any = (await read(CORE, coreAbi, 'jurorRoundOf', [id, j.h160]))[0];
         if (round.committed) continue;
@@ -290,7 +298,7 @@ async function main() {
       continue;
     }
 
-    if (state === 3) {
+    if (state === 4) {
       for (const [i, j] of jurors.entries()) {
         const round: any = (await read(CORE, coreAbi, 'jurorRoundOf', [id, j.h160]))[0];
         if (round.revealed || Number(round.dutySeats) === 0) continue;
