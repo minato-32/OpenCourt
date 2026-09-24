@@ -18,6 +18,8 @@ export interface CourtDeployment {
   core: string;
   escrow: string;
   eligibility: string;
+  /** Set when the court's eligibility policy reads a personhood registry. */
+  registry?: string;
   note?: string;
 }
 
@@ -29,6 +31,14 @@ export const COURTS: CourtDeployment[] = [
     escrow: deployments.current.SimpleEscrow,
     eligibility: deployments.current.StakeWeightedEligibility,
     note: deployments.current.note,
+  },
+  {
+    label: 'Demo court (personhood gated)',
+    core: deployments.demoCourt.ArbitratorCore,
+    escrow: deployments.demoCourt.SimpleEscrow,
+    eligibility: deployments.demoCourt.PopGatedEligibility,
+    registry: deployments.demoCourt.PersonhoodRegistry,
+    note: deployments.demoCourt.note,
   },
   {
     label: 'Feature-1 proof court',
@@ -121,6 +131,33 @@ export const eligibilityAbi: ethers.InterfaceAbi = [
 
 export const isEligible = async (eligibility: string, who: string) =>
   (await read(eligibility, eligibilityAbi, 'isEligible', [who]))[0] as boolean;
+
+/** The subset of PersonhoodRegistry the console reads. */
+export const registryAbiMin: ethers.InterfaceAbi = [
+  { type: 'function', name: 'issuer', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+  {
+    type: 'function',
+    name: 'rebindCooldownBlocks',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ type: 'uint64' }],
+  },
+  {
+    type: 'function',
+    name: 'isVerified',
+    stateMutability: 'view',
+    inputs: [{ name: 'wallet', type: 'address' }],
+    outputs: [{ type: 'bool' }],
+  },
+];
+
+export async function registryInfo(registry: string) {
+  const [issuer, cooldown] = await Promise.all([
+    read(registry, registryAbiMin, 'issuer'),
+    read(registry, registryAbiMin, 'rebindCooldownBlocks'),
+  ]);
+  return { issuer: issuer[0] as string, cooldownBlocks: cooldown[0] as bigint };
+}
 
 /** q* implied by a config, same one-third-dissent model the constructor guard uses. */
 export function qStar(cfg: CourtConfig): number {

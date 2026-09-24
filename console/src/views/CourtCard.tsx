@@ -6,6 +6,7 @@ import {
   courtConfig,
   drawTarget,
   qStar,
+  registryInfo,
   type CourtConfig,
   type CourtDeployment,
 } from '../lib/contracts';
@@ -16,6 +17,19 @@ export function CourtCard({ court }: { court: CourtDeployment }) {
   const [cost, setCost] = useState<bigint | null>(null);
   const [target, setTarget] = useState<bigint | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [gate, setGate] = useState<{ issuer: string; cooldownBlocks: bigint } | null>(null);
+
+  useEffect(() => {
+    setGate(null);
+    if (!court.registry) return;
+    let live = true;
+    registryInfo(court.registry)
+      .then((g) => live && setGate(g))
+      .catch(() => live && setGate(null));
+    return () => {
+      live = false;
+    };
+  }, [court.registry]);
 
   useEffect(() => {
     let live = true;
@@ -60,6 +74,18 @@ export function CourtCard({ court }: { court: CourtDeployment }) {
         <Fact k="activation delay" v={`${cfg.activationDelayBlocks} blocks`} />
         <Fact k="treasury" v={short(cfg.treasury)} mono />
       </div>
+
+      {court.registry && (
+        <div className="banner gate">
+          Personhood gated — a juror must hold a credential in the registry to claim a seat.
+          <div className="grid gate-grid">
+            <Fact k="registry" v={short(court.registry, 10)} mono />
+            <Fact k="issuer" v={gate ? short(gate.issuer, 10) : '…'} mono />
+            <Fact k="rebind cooldown" v={gate ? `${gate.cooldownBlocks} blocks` : '…'} />
+            <Fact k="policy" v={short(court.eligibility, 10)} mono />
+          </div>
+        </div>
+      )}
 
       <div className={`qstar ${q <= 0.6 ? 'ok' : 'bad'}`}>
         q* = {q.toFixed(4)} — {q <= 0.6 ? 'passes the FR-CR-02 guard (≤ 0.60)' : 'would be rejected as underpaid'}

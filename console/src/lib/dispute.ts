@@ -59,6 +59,14 @@ export interface Seat {
   slotStake: bigint;
 }
 
+export interface EvidenceItem {
+  submitter: string;
+  contentHash: string;
+  submittedAt: bigint;
+  sizeBytes: number;
+  uri: string;
+}
+
 export interface JurorRound {
   seatCount: number;
   dutySeats: number;
@@ -98,6 +106,18 @@ export async function getSeats(core: string, id: bigint): Promise<Seat[]> {
     settled: s.settled,
     vrfOutput: s.vrfOutput,
     slotStake: s.slotStake,
+  }));
+}
+
+/** Evidence pointers a dispute carries. Read from storage, so no indexer is required. */
+export async function getEvidence(core: string, id: bigint): Promise<EvidenceItem[]> {
+  const rows = (await read(core, coreAbi, 'getEvidence', [id]))[0] as any[];
+  return rows.map((r) => ({
+    submitter: r.submitter,
+    contentHash: r.contentHash,
+    submittedAt: r.submittedAt,
+    sizeBytes: Number(r.sizeBytes),
+    uri: r.uri,
   }));
 }
 
