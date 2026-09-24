@@ -6,14 +6,16 @@ import { coreAbi, type CourtConfig } from './contracts';
 
 export enum DisputeState {
   None = 0,
-  Drawing = 1,
-  Committing = 2,
-  Revealing = 3,
-  Resolved = 4,
+  Evidence = 1,
+  Drawing = 2,
+  Committing = 3,
+  Revealing = 4,
+  Resolved = 5,
 }
 
 export const STATE_LABEL: Record<DisputeState, string> = {
   [DisputeState.None]: 'None',
+  [DisputeState.Evidence]: 'Evidence',
   [DisputeState.Drawing]: 'Drawing',
   [DisputeState.Committing]: 'Committing',
   [DisputeState.Revealing]: 'Revealing',
@@ -40,6 +42,7 @@ export interface Dispute {
   tied: boolean;
   ruled: boolean;
   state: DisputeState;
+  evidenceDeadline: bigint;
   drawBlock: bigint;
   commitDeadline: bigint;
   revealDeadline: bigint;
@@ -86,6 +89,7 @@ export async function getDispute(core: string, id: bigint): Promise<Dispute> {
     tied: d.tied,
     ruled: d.ruled,
     state: Number(d.state) as DisputeState,
+    evidenceDeadline: d.evidenceDeadline,
     drawBlock: d.drawBlock,
     commitDeadline: d.commitDeadline,
     revealDeadline: d.revealDeadline,
@@ -140,6 +144,8 @@ export const commitmentOf = (id: bigint, juror: string, choice: number, salt: st
 /** The block a dispute's current phase ends at, and which crank advances it. */
 export function phaseDeadline(d: Dispute, cfg: CourtConfig): { endsAt: bigint; crank: string } | null {
   switch (d.state) {
+    case DisputeState.Evidence:
+      return { endsAt: d.evidenceDeadline, crank: 'openDrawing' };
     case DisputeState.Drawing:
       return { endsAt: d.drawBlock + cfg.drawWindowBlocks, crank: 'closeDrawing' };
     case DisputeState.Committing:

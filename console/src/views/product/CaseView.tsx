@@ -32,6 +32,7 @@ const CHOICE_LABEL: Record<number, { title: string; detail: string }> = {
 
 const PHASE_STORY: Record<DisputeState, string> = {
   [DisputeState.None]: 'This case does not exist.',
+  [DisputeState.Evidence]: 'Both sides are filing evidence. No juror has been drawn yet.',
   [DisputeState.Drawing]: 'A panel is being drawn. Jurors are claiming seats.',
   [DisputeState.Committing]: 'The panel is seated and voting in secret. No vote is visible yet.',
   [DisputeState.Revealing]: 'Jurors are revealing the votes they committed to.',
@@ -160,7 +161,14 @@ export function CaseView({
       </section>
 
       <section className="case-block">
-        <h3>Evidence <span className="muted">({evidence.length})</span></h3>
+        <h3>
+          Evidence <span className="muted">({evidence.length})</span>
+          {dispute.state === DisputeState.Evidence ? (
+            <span className="muted"> · still open</span>
+          ) : (
+            <span className="muted"> · frozen</span>
+          )}
+        </h3>
         {evidence.length === 0 ? (
           <p className="muted">Nothing has been submitted for this case.</p>
         ) : (
@@ -190,6 +198,8 @@ export function CaseView({
         <p className="hint">
           The chain stores the pointer and the hash, never the bytes. A juror can check the file they
           downloaded against the hash recorded here.
+          {dispute.state !== DisputeState.Evidence &&
+            ' This record closed before the panel formed, so every juror judged exactly these files.'}
         </p>
       </section>
 

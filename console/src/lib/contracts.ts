@@ -63,6 +63,7 @@ export interface CourtConfig {
   activationDelayBlocks: bigint;
   drawDelayBlocks: bigint;
   drawWindowBlocks: bigint;
+  evidenceBlocks: bigint;
   commitBlocks: bigint;
   revealBlocks: bigint;
   panelSize: number;
@@ -81,19 +82,20 @@ export async function courtConfig(core: string): Promise<CourtConfig> {
     minStake: c[0] as bigint,
     jurorFee: c[1] as bigint,
     drawThreshold: c[2] as bigint,
-    activationDelayBlocks: c[3] as bigint,
-    drawDelayBlocks: c[4] as bigint,
-    drawWindowBlocks: c[5] as bigint,
-    commitBlocks: c[6] as bigint,
-    revealBlocks: c[7] as bigint,
-    panelSize: Number(c[8]),
-    betaBps: Number(c[9]),
-    gammaBps: Number(c[10]),
-    thetaBps: Number(c[11]),
-    quorumBps: Number(c[12]),
-    appFeeBps: Number(c[13]),
-    protocolFeeBps: Number(c[14]),
-    treasury: c[15] as string,
+    evidenceBlocks: c[3] as bigint,
+    activationDelayBlocks: c[4] as bigint,
+    drawDelayBlocks: c[5] as bigint,
+    drawWindowBlocks: c[6] as bigint,
+    commitBlocks: c[7] as bigint,
+    revealBlocks: c[8] as bigint,
+    panelSize: Number(c[9]),
+    betaBps: Number(c[10]),
+    gammaBps: Number(c[11]),
+    thetaBps: Number(c[12]),
+    quorumBps: Number(c[13]),
+    appFeeBps: Number(c[14]),
+    protocolFeeBps: Number(c[15]),
+    treasury: c[16] as string,
   };
 }
 

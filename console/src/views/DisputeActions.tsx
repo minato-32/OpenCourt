@@ -104,6 +104,21 @@ export function DisputeActions({
       </div>
 
       <div className="actions">
+        {dispute.state === DisputeState.Evidence && (
+          <>
+            <span className="muted">
+              The record is open — either party may still file. It freezes before the panel forms.
+            </span>
+            <button
+              className="btn ghost"
+              disabled={tx.state === 'signing' || windowOpen}
+              onClick={() => run('Close the record', 'openDrawing', [dispute.id])}
+            >
+              Close record and open draw
+            </button>
+          </>
+        )}
+
         {dispute.state === DisputeState.Drawing && (
           <>
             <button className="btn" disabled={tx.state === 'signing'} onClick={() => run('Claim seat', 'claimSeat', [dispute.id])}>
