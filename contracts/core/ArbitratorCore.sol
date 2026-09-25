@@ -162,6 +162,10 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
         bool tied;
         bool ruled; // ruling delivered to the app
         bool voided; // resolved to 0 because the panel could not reach the evidence
+        /// @dev The delivered ruling is the court's configured fallback, not one the votes
+        ///      produced. Settlement still ran at ruling 0, so nobody was slashed against it —
+        ///      a reader that cannot tell the two apart reports paid jurors as slashed ones.
+        bool fallbackRuling;
         uint8 redraws; // panels burned to a quorum failure so far, capped at MAX_REDRAWS
         DisputeState state;
         uint64 evidenceDeadline;
@@ -455,8 +459,9 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
 
     // -------------------------------------------------------------- evidence
     /// @notice Attach an evidence pointer (an IPFS CID) to a live dispute.
-    /// @dev Callable by ANYONE while the dispute is open for argument — from the moment it is
-    ///      Drawing until it leaves Revealing. The protocol never interprets the pointer.
+    /// @dev Callable by ANYONE, but only while the record is open: from the moment the dispute is
+    ///      raised until its evidence deadline passes (FR-DL-02). The protocol never interprets
+    ///      the pointer.
     ///
     ///      The record is kept ON CHAIN, unlike the event-only first cut. The spec puts the URI in
     ///      the event log and only metadata in storage, which is the right shape once an indexer
@@ -474,6 +479,10 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
         // of evidence. Nothing can be added once a seat has been claimed.
         Dispute storage d = _disputes[disputeId];
         if (d.state != DisputeState.Evidence) revert WrongState();
+        // The deadline is hard, not merely the point openDrawing becomes callable. Gating on
+        // state alone left a gap between the advertised close and whenever a crank actually
+        // landed, in which a party who stopped filing on time could still be answered.
+        if (block.number > d.evidenceDeadline) revert DrawClosed();
         if (bytes(cid).length == 0 || bytes(cid).length > MAX_URI_BYTES) revert BadEvidence();
         if (_evidenceCount[disputeId][msg.sender] >= MAX_EVIDENCE_PER_SUBMITTER) revert EvidenceCapReached();
 
@@ -931,7 +940,10 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
         if (ruling == 0 && !d.voided) {
             if (tied && config.tieBreak == TB_DEFAULT) delivered = _fallbackChoice(d);
             else if (noQuorum && config.quorumFailure == QF_DEFAULT) delivered = _fallbackChoice(d);
-            if (delivered != 0) emit FallbackRuling(disputeId, delivered, tied);
+            if (delivered != 0) {
+                d.fallbackRuling = true;
+                emit FallbackRuling(disputeId, delivered, tied);
+            }
         }
 
         _settle(disputeId, d, ruling);
