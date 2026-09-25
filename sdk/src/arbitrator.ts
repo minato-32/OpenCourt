@@ -17,13 +17,20 @@ import { ethers } from 'ethers';
 import { ContractClient, type ContractClientOpts, type WriteResult } from './client.js';
 import ArbitratorCoreAbi from './abi/ArbitratorCore.json';
 
-/** Mirrors ArbitratorCore.DisputeState. */
+/**
+ * Mirrors ArbitratorCore.DisputeState.
+ *
+ * Evidence sits at 1, ahead of Drawing — a dispute is argued before a panel exists (FR-DL-02).
+ * Every number here has to match the contract: these are read straight off chain, so a stale copy
+ * does not fail to compile, it silently cranks the wrong phase on every dispute.
+ */
 export enum DisputeState {
   None = 0,
-  Drawing = 1,
-  Committing = 2,
-  Revealing = 3,
-  Resolved = 4,
+  Evidence = 1,
+  Drawing = 2,
+  Committing = 3,
+  Revealing = 4,
+  Resolved = 5,
 }
 
 /** Seat role fixed at openReveal (ArbitratorCore.ROLE_*). */
@@ -40,14 +47,21 @@ export interface DisputeView {
   ruling: number;
   tied: boolean;
   ruled: boolean;
+  /** Resolved to 0 because most of the panel could not reach the evidence. */
+  voided: boolean;
   state: DisputeState;
+  /** Last block the record accepts filings. The draw block is unset until it passes. */
+  evidenceDeadline: bigint;
   drawBlock: bigint;
   commitDeadline: bigint;
   revealDeadline: bigint;
   seatCount: number; // total admitted seats
   seatedWeight: number; // ROLE_SEATED seats (set at openReveal)
   revealedCount: number; // revealed seat weight
+  unavailableWeight: number; // seat weight that reported the record unreachable
+  redraws: number; // panels already burned to a quorum failure
   feePot: bigint;
+  evidenceGroupId: bigint;
   configHash: string;
 }
 
@@ -57,6 +71,8 @@ export interface JurorRoundView {
   dutySeats: number; // of those, ROLE_SEATED (set at openReveal)
   committed: boolean;
   revealed: boolean;
+  /** Answered by reporting the record unreachable instead of voting. */
+  reportedUnavailable: boolean;
   choice: number;
   commitment: string;
 }
@@ -76,6 +92,8 @@ export interface CourtConfigView {
   minStake: bigint;
   jurorFee: bigint;
   drawThreshold: bigint;
+  evidenceBond: bigint;
+  evidenceBlocks: bigint;
   activationDelayBlocks: bigint;
   drawDelayBlocks: bigint;
   drawWindowBlocks: bigint;
@@ -86,9 +104,16 @@ export interface CourtConfigView {
   gammaBps: number;
   thetaBps: number;
   quorumBps: number;
+  commitRequired: boolean;
+  minPoolWeightMultiple: number;
+  quorumFailure: number;
+  tieBreak: number;
+  defaultChoice: number;
   appFeeBps: number;
   protocolFeeBps: number;
+  pinFeeBps: number;
   treasury: string;
+  pinner: string;
 }
 
 export interface RulingView {
@@ -146,8 +171,19 @@ export class JuryArbitrator {
     cid: string,
     contentHash: string,
     sizeBytes: number,
+    /** The court's evidenceBond. Parties and the app file for nothing; anyone else must send it. */
+    bond: bigint = 0n,
   ): Promise<WriteResult> {
-    return this.client.write(signer, 'submitEvidence', [disputeId, cid, contentHash, sizeBytes]);
+    return this.client.write(signer, 'submitEvidence', [disputeId, cid, contentHash, sizeBytes], bond);
+  }
+
+  /** Pull back a third-party evidence bond once the dispute it was filed on has resolved. */
+  async reclaimEvidenceBond(
+    signer: PolkadotSigner,
+    disputeId: bigint | number,
+    index: bigint | number,
+  ): Promise<WriteResult> {
+    return this.client.write(signer, 'reclaimEvidenceBond', [disputeId, index]);
   }
 
   /** Every evidence pointer on a dispute, read from storage — no indexer needed. */
@@ -181,13 +217,18 @@ export class JuryArbitrator {
       ruling: Number(d.ruling),
       tied: d.tied as boolean,
       ruled: d.ruled as boolean,
+      voided: d.voided as boolean,
       state: Number(d.state) as DisputeState,
+      evidenceDeadline: d.evidenceDeadline as bigint,
       drawBlock: d.drawBlock as bigint,
       commitDeadline: d.commitDeadline as bigint,
       revealDeadline: d.revealDeadline as bigint,
       seatCount: Number(d.seatCount),
       seatedWeight: Number(d.seatedWeight),
       revealedCount: Number(d.revealedCount),
+      unavailableWeight: Number(d.unavailableWeight),
+      redraws: Number(d.redraws),
+      evidenceGroupId: d.evidenceGroupId as bigint,
       feePot: d.feePot as bigint,
       configHash: d.configHash as string,
     };
@@ -240,6 +281,8 @@ export class JuryArbitrator {
       minStake: c.minStake as bigint,
       jurorFee: c.jurorFee as bigint,
       drawThreshold: c.drawThreshold as bigint,
+      evidenceBond: c.evidenceBond as bigint,
+      evidenceBlocks: c.evidenceBlocks as bigint,
       activationDelayBlocks: c.activationDelayBlocks as bigint,
       drawDelayBlocks: c.drawDelayBlocks as bigint,
       drawWindowBlocks: c.drawWindowBlocks as bigint,
@@ -250,9 +293,16 @@ export class JuryArbitrator {
       gammaBps: Number(c.gammaBps),
       thetaBps: Number(c.thetaBps),
       quorumBps: Number(c.quorumBps),
+      commitRequired: c.commitRequired as boolean,
+      minPoolWeightMultiple: Number(c.minPoolWeightMultiple),
+      quorumFailure: Number(c.quorumFailure),
+      tieBreak: Number(c.tieBreak),
+      defaultChoice: Number(c.defaultChoice),
       appFeeBps: Number(c.appFeeBps),
       protocolFeeBps: Number(c.protocolFeeBps),
+      pinFeeBps: Number(c.pinFeeBps),
       treasury: c.treasury as string,
+      pinner: c.pinner as string,
     };
   }
 
@@ -265,6 +315,7 @@ export class JuryArbitrator {
       dutySeats: Number(s.dutySeats),
       committed: s.committed as boolean,
       revealed: s.revealed as boolean,
+      reportedUnavailable: s.reportedUnavailable as boolean,
       choice: Number(s.choice),
       commitment: s.commitment as string,
     };
@@ -304,6 +355,16 @@ export class JuryArbitrator {
   }
 
   /** Close the draw (Drawing -> Committing) after the claim window. Permissionless crank. */
+  /** Freeze the record and open the draw. Permissionless, once the evidence window lapses. */
+  async openDrawing(signer: PolkadotSigner, disputeId: bigint | number): Promise<WriteResult> {
+    return this.client.write(signer, 'openDrawing', [disputeId]);
+  }
+
+  /** Report that this dispute's evidence cannot be retrieved, instead of voting. */
+  async reportUnavailable(signer: PolkadotSigner, disputeId: bigint | number): Promise<WriteResult> {
+    return this.client.write(signer, 'reportUnavailable', [disputeId]);
+  }
+
   async closeDrawing(signer: PolkadotSigner, disputeId: bigint | number): Promise<WriteResult> {
     return this.client.write(signer, 'closeDrawing', [disputeId]);
   }
@@ -353,6 +414,33 @@ export class JuryArbitrator {
   }
 
   /** Tally + settle (or refund an undersubscribed draw). Callable by anyone. */
+  /**
+   * Put a juror's own committed pair on chain for them (FR-VT-04).
+   *
+   * The commitment binds the juror's address, so this cannot vote differently from what they
+   * committed — but whoever relays it does see the vote before it is mined.
+   */
+  async revealVoteFor(
+    signer: PolkadotSigner,
+    disputeId: bigint | number,
+    juror: string,
+    choice: number,
+    salt: string,
+  ): Promise<WriteResult> {
+    return this.client.write(signer, 'revealVoteFor', [disputeId, juror, choice, salt]);
+  }
+
+  /** Whether the pool can fill a panel, and what it is short by (FR-PG-06). */
+  async courtReadiness(): Promise<{ ready: boolean; have: bigint; need: bigint }> {
+    const r = await this.client.read('courtReadiness', []);
+    return { ready: r[0] as boolean, have: r[1] as bigint, need: r[2] as bigint };
+  }
+
+  /** Pull exactly what settlement left the app for one dispute. Callable only by that app. */
+  async claimRefund(signer: PolkadotSigner, disputeId: bigint | number): Promise<WriteResult> {
+    return this.client.write(signer, 'claimRefund', [disputeId]);
+  }
+
   async finalize(signer: PolkadotSigner, disputeId: bigint | number): Promise<WriteResult> {
     return this.client.write(signer, 'finalize', [disputeId]);
   }

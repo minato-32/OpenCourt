@@ -19,6 +19,9 @@
 import { type PolkadotSigner } from 'polkadot-api';
 import { JuryArbitrator, DisputeState, type DisputeView, type CourtConfigView } from './arbitrator.js';
 import { SaltKeystore, generateSalt } from './keystore.js';
+
+/** Open ballots carry no commitment, so the contract ignores the salt entirely. */
+const ZERO_SALT = '0x' + '0'.repeat(64);
 import { type WriteResult } from './client.js';
 
 /**
@@ -45,6 +48,8 @@ export interface JurorDaemonOpts {
   finalizeWhenDone?: boolean;
   /** Also attempt openReveal() once the commit deadline passes. Default true. */
   openRevealWhenDue?: boolean;
+  /** Crank Evidence -> Drawing once the record's window lapses. On by default. */
+  openDrawingWhenDue?: boolean;
   log?: (msg: string) => void;
 }
 
@@ -56,6 +61,7 @@ export class JurorDaemon {
   private readonly decide: DecisionFn;
   private readonly finalizeWhenDone: boolean;
   private readonly openRevealWhenDue: boolean;
+  private readonly openDrawingWhenDue: boolean;
   private readonly log: (msg: string) => void;
 
   private config: CourtConfigView | null = null;
@@ -72,6 +78,7 @@ export class JurorDaemon {
     this.decide = opts.decide ?? abstainDecision;
     this.finalizeWhenDone = opts.finalizeWhenDone ?? false;
     this.openRevealWhenDue = opts.openRevealWhenDue ?? true;
+    this.openDrawingWhenDue = opts.openDrawingWhenDue ?? true;
     this.log = opts.log ?? ((m) => console.log(`[juror ${short(this.juror)}] ${m}`));
   }
 
@@ -120,6 +127,11 @@ export class JurorDaemon {
     const cfg = this.config!;
 
     switch (d.state) {
+      case DisputeState.Evidence:
+        // Nothing for a juror to do while the parties are still filing — but somebody has to
+        // freeze the record, and the crank is permissionless.
+        if (this.openDrawingWhenDue) await this.tryOpenDrawing(id, d);
+        break;
       case DisputeState.Drawing:
         await this.tryClaimSeat(id, d, cfg);
         // Crank Drawing -> Committing (or refund an undersubscribed draw) once the
@@ -166,6 +178,15 @@ export class JurorDaemon {
     );
   }
 
+  /** Crank Evidence -> Drawing once the record's window lapses. */
+  private async tryOpenDrawing(id: bigint, d: DisputeView): Promise<void> {
+    const now = await this.arb.blockNumber();
+    if (now <= d.evidenceDeadline) return; // record still open — TooEarly
+    await this.submit(id, 'openDrawing', () => this.arb.openDrawing(this.signer, id), async () =>
+      (await this.arb.getDispute(id)).state !== DisputeState.Evidence,
+    );
+  }
+
   /** Crank Drawing -> Committing once the claim window lapses (or finalize if undersubscribed). */
   private async tryCloseDrawing(id: bigint, d: DisputeView, cfg: CourtConfigView): Promise<void> {
     const now = await this.arb.blockNumber();
@@ -186,6 +207,9 @@ export class JurorDaemon {
   }
 
   private async tryCommit(id: bigint, d: DisputeView): Promise<void> {
+    // An open-ballot court (commitRequired == false) rejects commitVote outright; its jurors
+    // cast a single open vote in the reveal window instead.
+    if (!this.config!.commitRequired) return;
     const jr = await this.arb.jurorRoundOf(id, this.juror);
     if (jr.seatCount === 0) return; // never got drawn
     if (jr.committed) return; // already committed (one commit covers all seats)
@@ -218,6 +242,24 @@ export class JurorDaemon {
   private async tryReveal(id: bigint): Promise<void> {
     const jr = await this.arb.jurorRoundOf(id, this.juror);
     if (jr.seatCount === 0 || jr.revealed) return;
+    if (jr.reportedUnavailable) return; // answered already, the other way
+
+    if (!this.config!.commitRequired) {
+      // Open ballot: there is no commitment to recover a choice from, so ask for one now. The
+      // salt is ignored by the contract in this mode.
+      if (jr.dutySeats === 0) return;
+      const d = await this.arb.getDispute(id);
+      const open = await this.decide(id, d);
+      if (!open || open < 1 || open > d.choices) {
+        this.log(`dispute ${id}: abstaining (decision returned ${open})`);
+        return;
+      }
+      await this.submit(id, `openVote(${open})`, () =>
+        this.arb.revealVote(this.signer, id, open, ZERO_SALT), () => this.isRevealed(id),
+      );
+      return;
+    }
+
     if (!jr.committed) return; // never committed, nothing to reveal (already slashed silent)
     if (jr.dutySeats === 0) return; // committed alternate that wasn't promoted — no duty
 
