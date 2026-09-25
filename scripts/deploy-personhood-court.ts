@@ -145,6 +145,8 @@ function courtConfig(treasury: string) {
     gammaBps: 2500,
     thetaBps: 2000,
     quorumBps: 5000,
+    commitRequired: true,
+    minPoolWeightMultiple: 0,
     appFeeBps: 0,
     protocolFeeBps: 0,
     pinFeeBps: 0,

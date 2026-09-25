@@ -73,6 +73,8 @@ interface CourtConfig {
   gammaBps: number;
   thetaBps: number;
   quorumBps: number;
+  commitRequired: boolean;
+  minPoolWeightMultiple: number;
   appFeeBps: number;
   protocolFeeBps: number;
   pinFeeBps: number;
@@ -97,6 +99,8 @@ function demoCourtConfig(treasury: string): CourtConfig {
     gammaBps: 2500,
     thetaBps: 2000,
     quorumBps: 5000,
+    commitRequired: true,
+    minPoolWeightMultiple: 0,
     appFeeBps: 0, // demo: no app/protocol take -> cost == panelSize * jurorFee
     protocolFeeBps: 0,
     pinFeeBps: 0,

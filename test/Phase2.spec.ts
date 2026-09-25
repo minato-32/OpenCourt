@@ -23,6 +23,8 @@ type Cfg = {
   gammaBps: bigint;
   thetaBps: bigint;
   quorumBps: bigint;
+  commitRequired: boolean;
+  minPoolWeightMultiple: bigint;
   appFeeBps: bigint;
   protocolFeeBps: bigint;
   pinFeeBps: bigint;
@@ -46,6 +48,8 @@ function baseCfg(treasury: string, over: Partial<Cfg> = {}): Cfg {
     gammaBps: 2500n,
     thetaBps: 2000n,
     quorumBps: 5000n,
+    commitRequired: true,
+    minPoolWeightMultiple: 0n,
     appFeeBps: 0n,
     protocolFeeBps: 0n,
     pinFeeBps: 0n,

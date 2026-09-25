@@ -28,6 +28,8 @@ describe('ArbitratorCore — full resolution loop', () => {
       gammaBps: 2500n, // 25% non-reveal slash
       thetaBps: 2000n, // 20% treasury cut
       quorumBps: 5000n, // 50% must reveal
+      commitRequired: true,
+      minPoolWeightMultiple: 0n,
       appFeeBps: 0n, // Phase-2 fee take (0 keeps arbitrationCost == panelSize*jurorFee)
       protocolFeeBps: 0n,
       pinFeeBps: 0n,

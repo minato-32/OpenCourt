@@ -23,6 +23,7 @@ function baseCfg(treasury: string, over: Cfg = {}): Cfg {
     evidenceBlocks: 5n, activationDelayBlocks: 0n, drawDelayBlocks: 1n, drawWindowBlocks: 100n,
     commitBlocks: 100n, revealBlocks: 100n, panelSize: 3n,
     betaBps: 1000n, gammaBps: 2500n, thetaBps: 2000n, quorumBps: 5000n,
+    commitRequired: true, minPoolWeightMultiple: 0n,
     appFeeBps: 0n, protocolFeeBps: 0n, pinFeeBps: 0n,
     treasury, pinner: ethers.ZeroAddress, ...over,
   };

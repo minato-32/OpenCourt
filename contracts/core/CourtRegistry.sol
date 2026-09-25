@@ -87,6 +87,8 @@ contract CourtRegistry {
         if (cfg.gammaBps < cfg.betaBps) revert BadConfig("gamma<beta");
         if (cfg.thetaBps >= BPS) revert BadConfig("thetaBps");
         if (cfg.quorumBps == 0 || cfg.quorumBps > BPS) revert BadConfig("quorumBps");
+        // commitRequired and minPoolWeightMultiple carry no economic guard: open voting is a
+        // court making itself worse for itself, and a zero readiness floor is the old behaviour.
         // App + protocol + pinning take is bounded (jurors paid first out of the gross-up).
         if (uint256(cfg.appFeeBps) + cfg.protocolFeeBps + cfg.pinFeeBps > MAX_TAKE_BPS) revert BadConfig("take");
         if (cfg.treasury == address(0)) revert BadConfig("treasury");
