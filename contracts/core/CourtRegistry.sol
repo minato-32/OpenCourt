@@ -23,6 +23,7 @@ contract CourtRegistry {
     uint16 internal constant MAX_TAKE_BPS = 2_000;
     uint16 internal constant MAX_QSTAR_RATIO = 6_000; // FR-CR-02: q* <= 0.60 (spec §7 band 0.5-0.6)
     uint32 internal constant MAX_PANEL = 15;
+    uint8 internal constant MAX_CHOICES = 8;
 
     struct Court {
         address arbitrator; // deployed ArbitratorCore
@@ -89,6 +90,13 @@ contract CourtRegistry {
         if (cfg.quorumBps == 0 || cfg.quorumBps > BPS) revert BadConfig("quorumBps");
         // commitRequired and minPoolWeightMultiple carry no economic guard: open voting is a
         // court making itself worse for itself, and a zero readiness floor is the old behaviour.
+        if (cfg.quorumFailure > 2) revert BadConfig("quorumFailure");
+        if (cfg.tieBreak > 1) revert BadConfig("tieBreak");
+        // A Default policy with no choice to fall back on would silently behave as Refuse.
+        if ((cfg.quorumFailure == 1 || cfg.tieBreak == 1) && cfg.defaultChoice == 0) {
+            revert BadConfig("defaultChoice");
+        }
+        if (cfg.defaultChoice > MAX_CHOICES) revert BadConfig("defaultChoice");
         // App + protocol + pinning take is bounded (jurors paid first out of the gross-up).
         if (uint256(cfg.appFeeBps) + cfg.protocolFeeBps + cfg.pinFeeBps > MAX_TAKE_BPS) revert BadConfig("take");
         if (cfg.treasury == address(0)) revert BadConfig("treasury");

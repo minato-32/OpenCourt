@@ -65,6 +65,9 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
         uint16 quorumBps; // min revealed weight / panelSize for a valid verdict
         bool commitRequired; // FR-VT-03: false = open voting, cheap but bandwagon-prone
         uint32 minPoolWeightMultiple; // FR-PG-06: pool must cover this many full panels; 0 = off
+        uint8 quorumFailure; // FR-ST-03: Refuse | Default | Redraw (see QF_*)
+        uint8 tieBreak; // FR-ST-03: Refuse | Default (see TB_*)
+        uint8 defaultChoice; // the ruling a Default policy hands the app; must be 1..choices
         uint16 appFeeBps; // fee take credited back to the app at settlement
         uint16 protocolFeeBps; // fee take routed to the treasury at settlement
         uint16 pinFeeBps; // FR-EV-06: fee take routed to whoever pins this court's evidence
@@ -94,6 +97,15 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
     uint16 internal constant MAX_QSTAR_RATIO = 6_000; // FR-CR-02: q* <= 0.60 (spec §7 band 0.5-0.6)
     uint32 internal constant MAX_PANEL = 15;
     uint8 internal constant MAX_CHOICES = 8; // K <= 8
+    uint8 internal constant MAX_REDRAWS = 2; // FR-ST-03 caps re-draws; a protocol invariant
+
+    // What a court does when the panel produces no verdict of its own.
+    // A court picks whether to redraw at all; the CAP on redraws is not the court's to set.
+    uint8 internal constant QF_REFUSE = 0; // ruling 0 — the app decides what that means
+    uint8 internal constant QF_DEFAULT = 1; // hand the app defaultChoice
+    uint8 internal constant QF_REDRAW = 2; // try a fresh panel, up to MAX_REDRAWS, then refuse
+    uint8 internal constant TB_REFUSE = 0;
+    uint8 internal constant TB_DEFAULT = 1;
     uint16 internal constant MAX_URI_BYTES = 128; // bounds one evidence pointer
     uint32 internal constant MAX_EVIDENCE_PER_SUBMITTER = 8; // bounds one submitter per dispute
     uint256 internal constant MAX_EXCLUDED_PARTIES = 16; // bounds the parties an app may declare
@@ -150,6 +162,7 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
         bool tied;
         bool ruled; // ruling delivered to the app
         bool voided; // resolved to 0 because the panel could not reach the evidence
+        uint8 redraws; // panels burned to a quorum failure so far, capped at MAX_REDRAWS
         DisputeState state;
         uint64 evidenceDeadline;
         uint64 drawBlock;
@@ -246,6 +259,10 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
     event EvidenceUnavailable(uint256 indexed disputeId, address indexed juror, uint32 seats);
     /// @notice Most of the participating panel could not reach the record: no verdict, no slash.
     event DisputeVoided(uint256 indexed disputeId, uint32 unavailableWeight, uint32 participation);
+    /// @notice Too few jurors showed up; the silent were slashed and a fresh panel is being drawn.
+    event Redrawn(uint256 indexed disputeId, uint8 attempt, uint64 drawBlock, uint256 feePot);
+    /// @notice No verdict carried on the votes, so the court's configured fallback was delivered.
+    event FallbackRuling(uint256 indexed disputeId, uint8 ruling, bool fromTie);
 
     // ------------------------------------------------------------------ errors
     error BadConfig(string what);
@@ -301,6 +318,13 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
         if (cfg.gammaBps < cfg.betaBps) revert BadConfig("gamma<beta");
         if (cfg.thetaBps >= BPS) revert BadConfig("thetaBps");
         if (cfg.quorumBps == 0 || cfg.quorumBps > BPS) revert BadConfig("quorumBps");
+        if (cfg.quorumFailure > QF_REDRAW) revert BadConfig("quorumFailure");
+        if (cfg.tieBreak > TB_DEFAULT) revert BadConfig("tieBreak");
+        // A Default policy with no choice to fall back on would silently behave as Refuse.
+        if ((cfg.quorumFailure == QF_DEFAULT || cfg.tieBreak == TB_DEFAULT) && cfg.defaultChoice == 0) {
+            revert BadConfig("defaultChoice");
+        }
+        if (cfg.defaultChoice > MAX_CHOICES) revert BadConfig("defaultChoice");
         // App + protocol take is bounded, and jurors are paid FIRST out of the
         // grossed-up cost (see arbitrationCost) — never underpaid by the take.
         if (uint256(cfg.appFeeBps) + cfg.protocolFeeBps + cfg.pinFeeBps > MAX_TAKE_BPS) revert BadConfig("take");
@@ -881,9 +905,107 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
         if (d.state != DisputeState.Revealing) revert WrongState();
         if (block.number <= d.revealDeadline) revert TooEarly();
 
-        (uint8 ruling, bool tied) = _tally(disputeId, d);
+        (uint8 ruling, bool tied, bool noQuorum) = _tally(disputeId, d);
+
+        // FR-ST-03: too few jurors turned up. Slash the silent, pay whoever did the work, and put
+        // their forfeited stake toward a fresh panel rather than closing a case nobody heard.
+        if (noQuorum && !d.voided && config.quorumFailure == QF_REDRAW && d.redraws < MAX_REDRAWS) {
+            if (_redraw(disputeId, d)) return;
+            // Fell through: the pot could not cover another panel's fees. Settle as normal below
+            // rather than reopen a round that cannot pay.
+        }
+
+        // The app may be handed a fallback answer, but SETTLEMENT still sees ruling 0. A juror
+        // must never be slashed against a number the votes did not produce — that is FR-ST-02,
+        // and folding the fallback into settlement would quietly break it.
+        uint8 delivered = ruling;
+        if (ruling == 0 && !d.voided) {
+            if (tied && config.tieBreak == TB_DEFAULT) delivered = _fallbackChoice(d);
+            else if (noQuorum && config.quorumFailure == QF_DEFAULT) delivered = _fallbackChoice(d);
+            if (delivered != 0) emit FallbackRuling(disputeId, delivered, tied);
+        }
+
         _settle(disputeId, d, ruling);
-        _resolve(disputeId, d, ruling, tied);
+        _resolve(disputeId, d, delivered, tied);
+    }
+
+    /// @dev The configured fallback, or 0 when it is not a choice this dispute offers.
+    function _fallbackChoice(Dispute storage d) private view returns (uint8) {
+        uint8 c = config.defaultChoice;
+        return (c == 0 || c > d.choices) ? 0 : c;
+    }
+
+    /// @dev Settle the failed round and reopen the draw. Returns false — changing nothing — when
+    ///      the fees left could not pay a fresh panel, so the caller settles terminally instead.
+    function _redraw(uint256 disputeId, Dispute storage d) private returns (bool) {
+        SeatEntry[] storage seats = _seatsOf[disputeId];
+        uint256 n = seats.length;
+        uint256 pot = 0;
+        uint256 owed = 0;
+
+        // Price the round before paying for any of it: the forfeited stake is part of what funds
+        // the retry, so the affordability test has to include it.
+        for (uint256 i = 0; i < n; i++) {
+            SeatEntry storage look = seats[i];
+            if (look.settled || look.role == ROLE_RELEASED) continue;
+            JurorRound storage lr = _jurorRound[disputeId][look.juror];
+            if (lr.revealed || lr.reportedUnavailable) owed += config.jurorFee;
+            else pot += (look.slotStake * config.gammaBps) / BPS;
+        }
+        uint256 nextRound = uint256(config.panelSize) * config.jurorFee;
+        if (d.feePot + pot < owed + nextRound) return false;
+        pot = 0; // recounted for real below
+
+        for (uint256 i = 0; i < n; i++) {
+            SeatEntry storage seat = seats[i];
+            if (seat.settled) continue;
+            seat.settled = true;
+            JurorRound storage jr = _jurorRound[disputeId][seat.juror];
+
+            if (seat.role == ROLE_RELEASED) {
+                withdrawable[seat.juror] += seat.slotStake; // never needed, never at risk
+            } else if (jr.revealed || jr.reportedUnavailable) {
+                // Showed up. Paid and released — they are not made to sit the retry.
+                withdrawable[seat.juror] += seat.slotStake + config.jurorFee;
+            } else {
+                uint256 slash = (seat.slotStake * config.gammaBps) / BPS;
+                pot += slash;
+                withdrawable[seat.juror] += seat.slotStake - slash;
+                emit Slashed(disputeId, seat.juror, slash);
+            }
+        }
+
+        // The silence pays for the retry. No treasury cut here: the pot is not a windfall, it is
+        // the budget for the round it caused.
+        d.feePot = d.feePot - owed + pot;
+        d.redraws += 1;
+        _resetRound(disputeId, d);
+        emit Redrawn(disputeId, d.redraws, d.drawBlock, d.feePot);
+        return true;
+    }
+
+    /// @dev Wipe everything a round wrote, so the next draw starts from a clean panel.
+    ///      Bounded by drawTarget seats and MAX_CHOICES, both small and fixed.
+    function _resetRound(uint256 disputeId, Dispute storage d) private {
+        SeatEntry[] storage seats = _seatsOf[disputeId];
+        for (uint256 i = 0; i < seats.length; i++) {
+            delete _slotClaimed[disputeId][seats[i].juror][seats[i].slot];
+            delete _jurorRound[disputeId][seats[i].juror];
+        }
+        delete _seatsOf[disputeId];
+        for (uint8 c = 1; c <= d.choices; c++) delete _votes[disputeId][c];
+
+        d.seatCount = 0;
+        d.seatedWeight = 0;
+        d.revealedCount = 0;
+        d.unavailableWeight = 0;
+        d.commitDeadline = 0;
+        d.revealDeadline = 0;
+        d.state = DisputeState.Drawing;
+        // A fresh future block for the seed: the old one is public now, and reusing it would let
+        // the same jurors who just walked away know exactly which seats they would win.
+        d.drawBlock = uint64(block.number) + config.drawDelayBlocks;
+        emit PhaseAdvanced(disputeId, DisputeState.Drawing);
     }
 
     /// @notice Re-attempt ruling delivery if the app's callback previously failed.
@@ -959,7 +1081,12 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
         d.seatedWeight = seated;
     }
 
-    function _tally(uint256 disputeId, Dispute storage d) private returns (uint8 ruling, bool tied) {
+    /// @dev `noQuorum` is reported separately from the ruling because the two answer different
+    ///      questions: what the app should be told, and whether the panel actually decided it.
+    function _tally(uint256 disputeId, Dispute storage d)
+        private
+        returns (uint8 ruling, bool tied, bool noQuorum)
+    {
         // FR-EV-06: the record was unreachable for most of the panel that turned up. There is no
         // honest verdict to be had, so the dispute voids: ruling 0, and nobody is slashed for a
         // failure that was the court's. Checked BEFORE the vote tally, because the votes that did
@@ -971,7 +1098,7 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
         if (participation >= need && uint256(d.unavailableWeight) * 2 > participation) {
             d.voided = true;
             emit DisputeVoided(disputeId, d.unavailableWeight, participation);
-            return (0, false);
+            return (0, false, false);
         }
 
         uint32 best = 0;
@@ -986,10 +1113,11 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
             }
         }
         // Quorum: enough of the panel weight revealed, else refuse (ruling 0).
-        if (d.revealedCount < need || tied || best == 0) {
-            return (0, tied);
+        noQuorum = d.revealedCount < need || best == 0;
+        if (noQuorum || tied) {
+            return (0, tied, noQuorum);
         }
-        return (ruling, false);
+        return (ruling, false, false);
     }
 
     /// @dev Settlement waterfall. `ruling == 0` means NO verdict carried — a genuine
