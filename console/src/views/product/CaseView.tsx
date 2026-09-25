@@ -62,6 +62,11 @@ export function CaseView({
   const [parties, setParties] = useState<{ payer: string; payee: string; amount: bigint } | null>(null);
   const [timeline, setTimeline] = useState<IndexedEvent[]>([]);
   const [bondMsg, setBondMsg] = useState('');
+  // Asked of the CORE, not inferred from the escrow's storage. A dispute raised by any other app
+  // — or through the appeal coordinator, where this escrow knows nothing about it — has parties
+  // the escrow cannot name, and the UI would then charge them a bond the contract refuses to
+  // accept from them, so they could not file at all.
+  const [isParty, setIsParty] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -94,6 +99,13 @@ export function CaseView({
         const jr = await jurorRoundOf(court.core, dispute.id, account.h160);
         if (live) setRound(jr);
       }
+      if (account) {
+        const excluded = (await read(court.core, coreAbi, 'isExcluded', [dispute.id, account.h160]))[0] as boolean;
+        if (live) setIsParty(excluded);
+      } else if (live) {
+        setIsParty(false);
+      }
+
       const events = await eventsForDispute(court.core, dispute.id.toString());
       if (live) setTimeline(events);
     })().catch(() => undefined);
@@ -103,7 +115,6 @@ export function CaseView({
   }, [court.core, court.escrow, dispute.id, dispute.state, account, head]);
 
   const me = account?.h160.toLowerCase();
-  const isParty = !!parties && (me === parties.payer.toLowerCase() || me === parties.payee.toLowerCase());
 
   async function reclaimBond(index: number) {
     if (!account) return;
@@ -124,12 +135,19 @@ export function CaseView({
   const mySeats = round?.seatCount ?? 0;
   const decided = dispute.state === DisputeState.Resolved;
 
+  // A fallback is a non-zero ruling the panel never produced. Branching on `ruling` alone printed
+  // it as an ordinary verdict, hid the fact that nothing was decided, and made the reason line
+  // written for exactly this case unreachable.
   const outcomeLine = decided
-    ? dispute.ruling === 0
-      ? dispute.voided
-        ? 'No decision was reached: most of the jury could not retrieve the evidence, so the case was voided and no juror was penalised. The escrow returns to the payer.'
-        : `No decision was reached — ${reason ?? 'the panel refused to rule'}. The escrow returns to the payer.`
-      : `${CHOICE_LABEL[dispute.ruling]?.title ?? `Ruling ${dispute.ruling}`}.`
+    ? dispute.voided
+      ? 'No decision was reached: most of the jury could not retrieve the evidence, so the case was voided and no juror was penalised. The escrow returns to the payer.'
+      : dispute.fallbackRuling
+        ? `The jury settled nothing — ${reason ?? 'no verdict carried'} — so this court's standing default applied: ${
+            CHOICE_LABEL[dispute.ruling]?.title ?? `ruling ${dispute.ruling}`
+          }. No juror was penalised.`
+        : dispute.ruling === 0
+          ? `No decision was reached — ${reason ?? 'the panel refused to rule'}. The escrow returns to the payer.`
+          : `${CHOICE_LABEL[dispute.ruling]?.title ?? `Ruling ${dispute.ruling}`}.`
     : PHASE_STORY[dispute.state];
 
   return (
@@ -183,7 +201,9 @@ export function CaseView({
                 <strong>{CHOICE_LABEL[c]?.title ?? `Option ${c}`}</strong>
                 <p className="muted">{CHOICE_LABEL[c]?.detail ?? 'Defined by the application.'}</p>
               </div>
-              {decided && dispute.ruling === c && <span className="won-tag">chosen</span>}
+              {decided && dispute.ruling === c && (
+                <span className="won-tag">{dispute.fallbackRuling ? 'court default' : 'chosen'}</span>
+              )}
             </div>
           ))}
         </div>

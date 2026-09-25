@@ -49,6 +49,12 @@ export interface DisputeView {
   ruled: boolean;
   /** Resolved to 0 because most of the panel could not reach the evidence. */
   voided: boolean;
+  /**
+   * The delivered ruling is the court's configured fallback, not one the votes produced.
+   * Settlement ran at ruling 0, so every revealer was paid — compare a juror's choice against
+   * this ruling without checking the flag and you report paid jurors as slashed.
+   */
+  fallbackRuling: boolean;
   state: DisputeState;
   /** Last block the record accepts filings. The draw block is unset until it passes. */
   evidenceDeadline: bigint;
@@ -218,6 +224,7 @@ export class JuryArbitrator {
       tied: d.tied as boolean,
       ruled: d.ruled as boolean,
       voided: d.voided as boolean,
+      fallbackRuling: d.fallbackRuling as boolean,
       state: Number(d.state) as DisputeState,
       evidenceDeadline: d.evidenceDeadline as bigint,
       drawBlock: d.drawBlock as bigint,

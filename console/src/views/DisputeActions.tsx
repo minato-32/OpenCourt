@@ -141,6 +141,16 @@ export function DisputeActions({
             >
               Close drawing
             </button>
+            {/* An undersubscribed draw cannot be closed — closeDrawing reverts PanelFull — and
+                finalize is its only exit. Without this the console could not settle a dispute
+                nobody turned up for, and the app's prepaid fee stayed locked. */}
+            <button
+              className="btn ghost"
+              disabled={tx.state === 'signing' || windowOpen}
+              onClick={() => run('Refund an empty draw', 'finalize', [dispute.id])}
+            >
+              Refund an empty draw
+            </button>
           </>
         )}
 
@@ -174,7 +184,7 @@ export function DisputeActions({
             </label>
             <button
               className="btn"
-              disabled={tx.state === 'signing' || round?.revealed}
+              disabled={tx.state === 'signing' || round?.revealed || round?.reportedUnavailable}
               onClick={() => run(`Vote ${choice}`, 'revealVote', [dispute.id, choice, ZERO_SALT])}
             >
               Cast vote
