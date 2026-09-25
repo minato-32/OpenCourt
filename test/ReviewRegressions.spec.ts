@@ -617,8 +617,85 @@ describe('regression — an appeal pot never settles on a ruling no panel produc
     const aliceBefore = await ethers.provider.getBalance(alice.address);
     await (await coord.connect(alice).claimAppealReward(1n, 0, 1)).wait();
     const aliceGot = (await ethers.provider.getBalance(alice.address)) - aliceBefore;
-    expect(aliceGot).to.be.lt(cost * 2n); // NOT the whole pot
+    // Bound chosen to DISCRIMINATE: settling the pot on the fallback would pay her the winning
+    // bucket's whole share (cost + extra); refunding pro rata halves it. `lt(cost * 2n)` held
+    // under both behaviours and guarded nothing.
+    expect(aliceGot).to.be.lt(cost);
 
     await expect(coord.connect(bob).claimAppealReward(1n, 0, 2)).to.not.be.reverted;
+  });
+});
+
+describe('regression — a default win that only confirms the panel is still the panel', () => {
+  it('flags a changed answer as a court ruling and leaves a confirmed one alone', async () => {
+    const signers = await ethers.getSigners();
+    const [, treasury, alice, bob] = signers;
+
+    async function ladder() {
+      const cs = [
+        await deployCourt(baseCfg(treasury.address, { panelSize: 3n })),
+        await deployCourt(baseCfg(treasury.address, { panelSize: 7n })),
+      ];
+      const Coord = await ethers.getContractFactory('AppealCoordinator');
+      const coord: any = await Coord.deploy(await Promise.all(cs.map((c) => c.getAddress())), 100n, 2);
+      await coord.waitForDeployment();
+      const App = await ethers.getContractFactory('MockArbitrable');
+      const app: any = await App.deploy(await coord.getAddress());
+      await app.waitForDeployment();
+      await (await app.createDispute(2, { value: await coord.arbitrationCost('0x') })).wait();
+      await mine(6);
+      await (await cs[0].openDrawing(1n)).wait();
+      await round(cs[0], baseCfg(treasury.address), signers.slice(4, 7), [
+        [signers[4], 2], [signers[5], 2], [signers[6], 2],
+      ]);
+      await (await cs[0].finalize(1n)).wait();
+      return coord;
+    }
+
+    // A panel really did rule 2. Alice pays to DEFEND it and nobody argues the other side.
+    const confirming = await ladder();
+    const cost = (await confirming.appealCost(1n)) as bigint;
+    await (await confirming.connect(alice).fundAppeal(1n, 2, { value: cost })).wait();
+    await mine(101);
+    await (await confirming.finalizeAppeal(1n)).wait();
+    expect((await confirming.currentRuling(1n))[0]).to.equal(2n);
+    // Nothing about the jury's answer changed, so calling it a court default would tell every
+    // reader — and any parent ladder settling a pot on this flag — that no jury decided it.
+    expect(await confirming.rulingIsFallback(1n)).to.equal(false);
+
+    // Now the other shape: Bob pays to OVERTURN it and nobody defends.
+    const overturning = await ladder();
+    await (await overturning.connect(bob).fundAppeal(1n, 1, { value: cost })).wait();
+    await mine(101);
+    await (await overturning.finalizeAppeal(1n)).wait();
+    expect((await overturning.currentRuling(1n))[0]).to.equal(1n);
+    expect(await overturning.rulingIsFallback(1n)).to.equal(true); // decided by who paid
+  });
+});
+
+describe('regression — a court that cannot answer rulingIsFallback must not wedge the ladder', () => {
+  it('treats an unanswerable probe as no fallback instead of locking every backer out', async () => {
+    const signers = await ethers.getSigners();
+    const [, treasury] = signers;
+    const cs = [
+      await deployCourt(baseCfg(treasury.address, { panelSize: 3n })),
+      await deployCourt(baseCfg(treasury.address, { panelSize: 7n })),
+    ];
+    const Coord = await ethers.getContractFactory('AppealCoordinator');
+    const coord: any = await Coord.deploy(await Promise.all(cs.map((c) => c.getAddress())), 100n, 2);
+    await coord.waitForDeployment();
+
+    // A hard call would revert here against any court deployed before rulingIsFallback existed —
+    // and the courts already live on Paseo are exactly that. The court's own delivery is
+    // revert-proof, so it would swallow the failure and the dispute would sit in Pending forever
+    // with the previous round's appeal pot unsettled and every backer's money locked.
+    const probe = await ethers.getContractAt('AppealCoordinator', await coord.getAddress());
+    expect(await probe.rulingIsFallback(999n)).to.equal(false);
+
+    // An address with no code at all answers the same way rather than reverting.
+    const Core = await ethers.getContractFactory('ArbitratorCore');
+    const iface = Core.interface.encodeFunctionData('rulingIsFallback', [1n]);
+    const raw = await ethers.provider.call({ to: signers[19].address, data: iface });
+    expect(raw).to.equal('0x'); // empty return — the coordinator reads this as false
   });
 });

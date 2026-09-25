@@ -267,7 +267,7 @@ contract AppealCoordinator is IArbitrator, IArbitrable, IEvidenceGroups {
         cd.ruling = uint8(ruling);
         // Carried up from the child: an app reading this coordinator has to be able to tell a
         // jury's answer from a court's standing default, exactly as it could reading a court.
-        cd.fallbackRuling = IArbitrator(msg.sender).rulingIsFallback(childId);
+        cd.fallbackRuling = _childRulingIsFallback(msg.sender, childId);
         cd.state = CoordState.Appealable;
         cd.appealDeadline = uint64(block.number) + appealWindowBlocks;
         emit Ruling(IArbitrator(msg.sender), childId, ruling, isFinal);
@@ -349,10 +349,13 @@ contract AppealCoordinator is IArbitrator, IArbitrable, IEvidenceGroups {
             // One side paid to argue; the other did not turn up. The case goes to the side that
             // did, without a new panel — there is no second position left to weigh.
             uint8 winner = soleFundedChoice[coordId][r];
+            // A default win that CHANGES the answer was decided by who paid, not by a panel. One
+            // that merely confirms the round's own ruling leaves a real verdict standing — and
+            // flagging that as a court fallback would tell every reader, and any parent ladder
+            // settling its pot on this, that no jury decided a case a jury did decide.
+            cd.fallbackRuling = cd.fallbackRuling || winner != cd.ruling;
             cd.ruling = winner;
             cd.tied = false;
-            // Nobody argued the other side, so no panel weighed this either.
-            cd.fallbackRuling = true;
             emit WonByDefault(coordId, r, winner);
             _settlePot(coordId, r, winner);
             _finalize(coordId, cd);
@@ -396,6 +399,22 @@ contract AppealCoordinator is IArbitrator, IArbitrable, IEvidenceGroups {
             emit AppealCourtRefused(coordId, uint32(next));
             return false;
         }
+    }
+
+    /// @dev Ask a court whether its ruling was a fallback, treating silence as "no".
+    ///
+    ///      A hard call here would wedge this coordinator against any court deployed before
+    ///      rulingIsFallback existed — including the ones already live. The court's own delivery
+    ///      is revert-proof and swallows the failure, so rule() would simply never complete: the
+    ///      dispute sits in Pending forever, the previous round's appeal pot is never settled, and
+    ///      every backer's money is locked for good. Defaulting to false loses nothing that was
+    ///      knowable: a court that cannot answer the question has no fallback ruling to report.
+    function _childRulingIsFallback(address court, uint256 childId) private view returns (bool) {
+        (bool ok, bytes memory ret) = court.staticcall(
+            abi.encodeCall(IArbitrator.rulingIsFallback, (childId))
+        );
+        if (!ok || ret.length < 32) return false;
+        return abi.decode(ret, (bool));
     }
 
     /// @dev The body of an advance, external ONLY so the caller can try/catch it as one unit.
