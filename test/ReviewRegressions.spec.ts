@@ -430,3 +430,73 @@ describe('regression — a fallback ruling is not a verdict', () => {
     expect(d2.fallbackRuling).to.equal(false);
   });
 });
+
+describe('regression — an appeal pot is swept only once its round has settled', () => {
+  it('refuses an early sweep, so a crank bot cannot freeze the pot at zero', async () => {
+    const signers = await ethers.getSigners();
+    const [, treasury, payer, payee] = signers;
+    const cs = [
+      await deployCourt(baseCfg(treasury.address, { panelSize: 3n })),
+      await deployCourt(baseCfg(treasury.address, { panelSize: 7n })),
+    ];
+    const Coord = await ethers.getContractFactory('AppealCoordinator');
+    const coord: any = await Coord.deploy(await Promise.all(cs.map((c) => c.getAddress())), 100n, 2);
+    await coord.waitForDeployment();
+    const App = await ethers.getContractFactory('MockArbitrable');
+    const app: any = await App.deploy(await coord.getAddress());
+    await app.waitForDeployment();
+    await (await app.createDispute(2, { value: await coord.arbitrationCost('0x') })).wait();
+
+    await mine(6);
+    await (await cs[0].openDrawing(1n)).wait();
+    await round(cs[0], baseCfg(treasury.address), signers.slice(4, 7), [
+      [signers[4], 1], [signers[5], 1], [signers[6], 1],
+    ]);
+    await (await cs[0].finalize(1n)).wait();
+
+    const cost = (await coord.appealCost(1n)) as bigint; // 70
+    await (await coord.connect(payer).fundAppeal(1n, 1, { value: cost })).wait();
+    await (await coord.connect(payee).fundAppeal(1n, 2, { value: cost })).wait();
+    await mine(101);
+    await (await coord.finalizeAppeal(1n)).wait();
+
+    // Round 1 is live. Sweeping now would latch `swept` with nothing collected, and the backers
+    // would split 140 - 70 = 70 between them instead of the full 140 that comes back — with the
+    // refund then stranded, since every reward flag is already claimed. Anyone can call this, so
+    // an honest crank bot sweeping on sight would have done it.
+    await expect(coord.reclaimFees(1n, 1)).to.be.revertedWithCustomError(coord, 'TooEarly');
+    await expect(coord.connect(payer).claimAppealReward(1n, 0, 1))
+      .to.be.revertedWithCustomError(coord, 'WrongState');
+
+    // Round 1 goes undersubscribed and refunds the whole fee.
+    await mine(6);
+    await (await cs[1].openDrawing(1n)).wait();
+    await mine(160);
+    await (await cs[1].finalize(1n)).wait();
+
+    await (await coord.reclaimFees(1n, 1)).wait();
+    await expect(coord.connect(payer).claimAppealReward(1n, 0, 1)).to.changeEtherBalance(payer, cost);
+    await expect(coord.connect(payee).claimAppealReward(1n, 0, 2)).to.changeEtherBalance(payee, cost);
+  });
+});
+
+describe('regression — an evidence bond must fit the record it is stored in', () => {
+  it('rejects a court whose bond would be truncated into the uint128 it is kept in', async () => {
+    const [, treasury] = await ethers.getSigners();
+    const Elig = await ethers.getContractFactory('StakeWeightedEligibility');
+    const elig = await Elig.deploy();
+    await elig.waitForDeployment();
+    const Core = await ethers.getContractFactory('ArbitratorCore');
+    const tooBig = (1n << 128n);
+    await expect(Core.deploy(baseCfg(treasury.address, { evidenceBond: tooBig }), await elig.getAddress(), 0n))
+      .to.be.revertedWithCustomError(Core, 'BadConfig').withArgs('evidenceBond');
+
+    // The registry mirrors every constructor guard; a config that passes one and fails the other
+    // is the validation-parity bug class.
+    const Reg = await ethers.getContractFactory('CourtRegistry');
+    const reg: any = await Reg.deploy();
+    await reg.waitForDeployment();
+    await expect(reg.validateConfig(baseCfg(treasury.address, { evidenceBond: tooBig }), await elig.getAddress()))
+      .to.be.revertedWithCustomError(reg, 'BadConfig').withArgs('evidenceBond');
+  });
+});

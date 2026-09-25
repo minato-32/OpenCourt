@@ -305,6 +305,9 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
         if (cfg.minStake == 0) revert BadConfig("minStake");
         if (cfg.jurorFee == 0) revert BadConfig("jurorFee");
         if (cfg.drawThreshold == 0) revert BadConfig("drawThreshold");
+        // EvidenceRecord.bond is uint128; a larger bond would be stored truncated while bondsHeld
+        // counted the full value, so refunds would underpay and the never-mint sum would drift.
+        if (cfg.evidenceBond > type(uint128).max) revert BadConfig("evidenceBond");
         // drawDelay >= 1 (a real gap before the seed's blockhash) and window <= 255
         // so every claimable block has a live blockhash. (Audit HIGH fix.)
         // A zero evidence window would freeze the record in the block the dispute opens, before

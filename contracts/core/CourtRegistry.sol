@@ -68,6 +68,8 @@ contract CourtRegistry {
         if (cfg.minStake == 0) revert BadConfig("minStake");
         if (cfg.jurorFee == 0) revert BadConfig("jurorFee");
         if (cfg.drawThreshold == 0) revert BadConfig("drawThreshold");
+        // EvidenceRecord.bond is uint128; a larger bond would be stored truncated.
+        if (cfg.evidenceBond > type(uint128).max) revert BadConfig("evidenceBond");
         // A zero evidence window freezes the record in the block the dispute opens, before either
         // party could file anything.
         if (cfg.evidenceBlocks == 0) revert BadConfig("evidenceBlocks");
