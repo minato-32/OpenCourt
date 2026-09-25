@@ -28,6 +28,7 @@ type Cfg = {
   quorumFailure: bigint;
   tieBreak: bigint;
   defaultChoice: bigint;
+  closedPool: boolean;
   appFeeBps: bigint;
   protocolFeeBps: bigint;
   pinFeeBps: bigint;
@@ -56,6 +57,7 @@ function baseCfg(treasury: string, over: Partial<Cfg> = {}): Cfg {
     quorumFailure: 0n,
     tieBreak: 0n,
     defaultChoice: 0n,
+    closedPool: false,
     appFeeBps: 0n,
     protocolFeeBps: 0n,
     pinFeeBps: 0n,

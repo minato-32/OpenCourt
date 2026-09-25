@@ -29,7 +29,7 @@ type Cfg = {
   commitBlocks: bigint; revealBlocks: bigint; panelSize: bigint;
   betaBps: bigint; gammaBps: bigint; thetaBps: bigint; quorumBps: bigint;
   commitRequired: boolean; minPoolWeightMultiple: bigint;
-  quorumFailure: bigint; tieBreak: bigint; defaultChoice: bigint;
+  quorumFailure: bigint; tieBreak: bigint; defaultChoice: bigint; closedPool: boolean;
   appFeeBps: bigint; protocolFeeBps: bigint; pinFeeBps: bigint;
   treasury: string; pinner: string;
 };
@@ -43,6 +43,7 @@ function baseCfg(treasury: string, over: Partial<Cfg> = {}): Cfg {
     betaBps: 1000n, gammaBps: 2500n, thetaBps: 2000n, quorumBps: 5000n,
     commitRequired: true, minPoolWeightMultiple: 0n,
     quorumFailure: 0n, tieBreak: 0n, defaultChoice: 0n,
+    closedPool: false,
     appFeeBps: 0n, protocolFeeBps: 0n, pinFeeBps: 0n,
     treasury, pinner: ethers.ZeroAddress, ...over,
   };

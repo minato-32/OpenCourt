@@ -146,6 +146,7 @@ function courtConfig(treasury: string) {
     quorumFailure: 0, // refuse to rule when the panel produces no verdict
     tieBreak: 0,
     defaultChoice: 0,
+    closedPool: false, // open to any staker
     appFeeBps: 0,
     protocolFeeBps: 0,
     pinFeeBps: 0,

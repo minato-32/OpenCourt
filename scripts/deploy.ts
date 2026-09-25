@@ -96,6 +96,7 @@ interface CourtConfig {
   quorumFailure: number;
   tieBreak: number;
   defaultChoice: number;
+  closedPool: boolean;
   appFeeBps: number;
   protocolFeeBps: number;
   pinFeeBps: number;
@@ -137,6 +138,7 @@ function demoCourtConfig(treasury: string): CourtConfig {
     quorumFailure: 0, // refuse to rule when the panel produces no verdict
     tieBreak: 0,
     defaultChoice: 0,
+    closedPool: false, // open to any staker
     appFeeBps: 0, // demo: no app/protocol take -> cost == panelSize * jurorFee
     protocolFeeBps: 0,
     pinFeeBps: 0,

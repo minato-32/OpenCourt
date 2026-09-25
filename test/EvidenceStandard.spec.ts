@@ -22,6 +22,7 @@ async function deploy(over: Partial<Cfg> = {}) {
     betaBps: 1000n, gammaBps: 2500n, thetaBps: 2000n, quorumBps: 5000n,
     commitRequired: true, minPoolWeightMultiple: 0n,
     quorumFailure: 0n, tieBreak: 0n, defaultChoice: 0n,
+    closedPool: false,
     appFeeBps: 0n, protocolFeeBps: 0n, pinFeeBps: 0n,
     treasury: treasury.address, pinner: ethers.ZeroAddress,
     ...over,

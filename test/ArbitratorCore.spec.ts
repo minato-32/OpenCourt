@@ -33,6 +33,7 @@ describe('ArbitratorCore — full resolution loop', () => {
       quorumFailure: 0n,
       tieBreak: 0n,
       defaultChoice: 0n,
+      closedPool: false,
       appFeeBps: 0n, // Phase-2 fee take (0 keeps arbitrationCost == panelSize*jurorFee)
       protocolFeeBps: 0n,
       pinFeeBps: 0n,

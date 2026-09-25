@@ -33,6 +33,12 @@ interface IArbitrator {
     ///         fallback settles at ruling 0, nobody is slashed, and no jury agreed on it.
     function rulingIsFallback(uint256 disputeId) external view returns (bool);
 
+    /// @notice Whether this court's juror pool is gated by the app rather than open to any
+    ///         staker (FR-PG-07). A closed pool is peer review by an app's own members, not
+    ///         neutral third-party arbitration; both are legitimate, and a user is entitled to
+    ///         know which one they are in.
+    function poolIsClosed() external view returns (bool);
+
     /// @notice Target panel size for a round in this arbitrator. Used to check that an appeal
     ///         ladder actually escalates (FR-AP-01).
     function panelSize() external view returns (uint32);

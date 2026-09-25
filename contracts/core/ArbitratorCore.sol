@@ -68,6 +68,11 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
         uint8 quorumFailure; // FR-ST-03: Refuse | Default | Redraw (see QF_*)
         uint8 tieBreak; // FR-ST-03: Refuse | Default (see TB_*)
         uint8 defaultChoice; // the ruling a Default policy hands the app; must be 1..choices
+        /// @dev FR-PG-07: the pool is gated by the app rather than open to any staker. Immutable,
+        ///      like every field here — a court that launches open and later closes its pool has
+        ///      rug-pulled its own arbitration. Declared by the app; the eligibility policy's
+        ///      descriptor is what lets anyone check the declaration against reality.
+        bool closedPool;
         uint16 appFeeBps; // fee take credited back to the app at settlement
         uint16 protocolFeeBps; // fee take routed to the treasury at settlement
         uint16 pinFeeBps; // FR-EV-06: fee take routed to whoever pins this court's evidence
@@ -98,6 +103,10 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
     uint32 internal constant MAX_PANEL = 15;
     uint8 internal constant MAX_CHOICES = 8; // K <= 8
     uint8 internal constant MAX_REDRAWS = 2; // FR-ST-03 caps re-draws; a protocol invariant
+    /// @dev FR-PG-02. In an open court the activation delay is anti just-in-time hygiene; in a
+    ///      closed one it is the primary defence, because a juror the app adds today still cannot
+    ///      touch any dispute the app can currently foresee. ~14 days at 6s blocks.
+    uint64 internal constant MIN_CLOSED_ACTIVATION_BLOCKS = 201_600;
 
     // What a court does when the panel produces no verdict of its own.
     // A court picks whether to redraw at all; the CAP on redraws is not the court's to set.
@@ -329,6 +338,10 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
         if (cfg.gammaBps < cfg.betaBps) revert BadConfig("gamma<beta");
         if (cfg.thetaBps >= BPS) revert BadConfig("thetaBps");
         if (cfg.quorumBps == 0 || cfg.quorumBps > BPS) revert BadConfig("quorumBps");
+        // FR-PG-02: a closed pool buys its safety with time, not with trust.
+        if (cfg.closedPool && cfg.activationDelayBlocks < MIN_CLOSED_ACTIVATION_BLOCKS) {
+            revert BadConfig("closedActivationDelay");
+        }
         if (cfg.quorumFailure > QF_REDRAW) revert BadConfig("quorumFailure");
         if (cfg.tieBreak > TB_DEFAULT) revert BadConfig("tieBreak");
         // A Default policy with no choice to fall back on would silently behave as Refuse.
@@ -655,6 +668,11 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
     /// @inheritdoc IArbitrator
     function panelSize() external view returns (uint32) {
         return config.panelSize;
+    }
+
+    /// @inheritdoc IArbitrator
+    function poolIsClosed() external view returns (bool) {
+        return config.closedPool;
     }
 
     /// @inheritdoc IArbitrator
