@@ -15,6 +15,14 @@ export interface IndexedEvent {
 }
 
 const DB_NAME = 'opencourt-index';
+/**
+ * What this database was called before the project was renamed.
+ *
+ * Nothing is migrated: the index is a cache of public chain events, so the only cost of losing it
+ * is one re-backfill. It IS deleted, though — leaving it behind would sit in the browser forever
+ * holding a copy of every event, with nothing that ever reads it again.
+ */
+const LEGACY_DB_NAME = 'getcourt-index';
 const STORE = 'events';
 const META = 'meta';
 /** Blocks pulled per backfill pass; a pass is one RPC round trip per block. */
@@ -26,6 +34,11 @@ let dbPromise: Promise<IDBDatabase> | null = null;
 
 function openDb(): Promise<IDBDatabase> {
   if (dbPromise) return dbPromise;
+  try {
+    indexedDB.deleteDatabase(LEGACY_DB_NAME);
+  } catch {
+    /* an orphaned cache is not worth failing a page load over */
+  }
   dbPromise = new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, 1);
     req.onupgradeneeded = () => {

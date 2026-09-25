@@ -70,13 +70,35 @@ export function DisputeActions({
   async function commit() {
     if (!account) return;
     if (!pass) return setTx({ state: 'error', msg: 'Set a passphrase first — it encrypts the salt you must reveal with.' });
+    // A commitment on chain is bound to ONE salt for the life of the round. Overwriting a stored
+    // salt makes that commitment unrevealable, which is a guaranteed gamma slash — and the window
+    // for it is wide: a lagging refresh re-enables this button, a second click replaces the salt,
+    // the transaction is then refused as AlreadyCommitted, and the damage is already done.
+    if (round?.committed) {
+      return setTx({
+        state: 'error',
+        msg: 'You have already committed on this dispute. Committing again would replace the stored salt and make your on-chain vote unrevealable.',
+      });
+    }
     const salt = keystore.generateSalt();
+    const params = [dispute.id, commitmentOf(dispute.id, account.h160, choice, salt)];
+
+    // Simulate FIRST, store only once it is going to be signed. Storing up front meant a commit
+    // that never left the browser had already overwritten the salt of one that did.
+    setTx({ state: 'signing', msg: `Commit choice ${choice}…` });
+    const would = await simulate(account.ss58, court.core, coreAbi, 'commitVote', params);
+    if (would) {
+      return setTx({ state: 'error', msg: `Commit would revert: ${would.reason} — nothing signed, nothing stored` });
+    }
     // Persist BEFORE signing: a commit whose salt was never stored is a guaranteed gamma slash.
     await keystore.put(court.core, dispute.id, account.h160, choice, salt, pass);
-    await run(`Commit choice ${choice}`, 'commitVote', [
-      dispute.id,
-      commitmentOf(dispute.id, account.h160, choice, salt),
-    ]);
+    try {
+      const r = await write(account.account.polkadotSigner, court.core, coreAbi, 'commitVote', params);
+      setTx({ state: 'done', msg: `Commit choice ${choice} included in ${short(r.blockHash, 10)}` });
+      onDone();
+    } catch (e: any) {
+      setTx({ state: 'error', msg: e?.message ?? String(e) });
+    }
   }
 
   async function reveal() {
