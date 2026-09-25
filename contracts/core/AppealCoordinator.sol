@@ -35,6 +35,9 @@ contract AppealCoordinator is IArbitrator, IArbitrable, IEvidenceGroups {
     IArbitrator[] public courts; // round r -> courts[r]; panel sizes must increase
     uint64 public immutable appealWindowBlocks; // 0 => no appeals (single round)
     uint8 public immutable maxRounds; // FR-AP-01: rounds are capped, however long the ladder is
+    /// @dev ArbitratorCore.DisputeState.Resolved. A court only knows what a round paid back once
+    ///      it has settled, so nothing may be swept before this.
+    uint8 internal constant CHILD_RESOLVED = 5;
 
     enum CoordState { None, Pending, Appealable, Resolved }
 
@@ -477,9 +480,17 @@ contract AppealCoordinator is IArbitrator, IArbitrable, IEvidenceGroups {
         uint256 childId = roundChild[coordId][round];
         if (childId == 0) revert UnknownDispute();
 
+        // The round must have SETTLED first. Sweeping earlier looks harmless — the call simply
+        // returns nothing — but it latches `swept`, which is what fixes how much each backer is
+        // owed. A crank bot sweeping every round on sight would freeze the pot at zero extra, the
+        // backers would split only what was left after the round was bought, and the refund that
+        // arrived later would sit in this contract with every reward already claimed.
+        if (courts[round].disputeState(childId) != CHILD_RESOLVED) revert TooEarly();
+
         uint256 before = address(this).balance;
-        // Tolerated: a round that left nothing back is a normal outcome, and this call must still
-        // mark the pot swept or every backer's reward would be stuck behind it.
+        // Tolerated now that the round is final: a settled round that left nothing back is a
+        // normal outcome, and this call must still mark the pot swept or every backer's reward
+        // would be stuck behind it.
         try courts[round].claimRefund(childId) {} catch {}
         uint256 received = address(this).balance - before;
 
