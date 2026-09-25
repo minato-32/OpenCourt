@@ -18,7 +18,7 @@
  *     which would let the next save wipe every other dispute's salt.
  *   - Salt keys are namespaced by arbitrator address (and chain, if supplied) so
  *     a redeploy at the same dispute ids cannot collide with old secrets.
- *   - saveSalt is append-only per dispute: it never clobbers an existing salt
+ *   - saveSalt is append-only per dispute ROUND: it never clobbers an existing salt
  *     (a commit binds to exactly one salt for the life of the dispute).
  */
 
@@ -58,8 +58,15 @@ export class SaltKeystore {
   }
 
   /** Namespaced storage key: <chain>:<arbitrator>:<disputeId>. */
-  private key(disputeId: bigint | number): string {
-    return `${this.chain}:${this.arbitrator}:${String(disputeId)}`;
+  /**
+   * @param round which commit round of the dispute. A dispute id alone stopped identifying a
+   *        round once a quorum failure could redraw the panel (FR-ST-03): the core wipes every
+   *        juror round and the SAME dispute id runs commit/reveal again. Round 0 keeps the bare
+   *        key so salts written before this existed are still found.
+   */
+  private key(disputeId: bigint | number, round = 0): string {
+    const base = `${this.chain}:${this.arbitrator}:${String(disputeId)}`;
+    return round === 0 ? base : `${base}#${round}`;
   }
 
   private read(): KeystoreFile {
@@ -117,9 +124,9 @@ export class SaltKeystore {
    * the same salt again is a no-op; storing a DIFFERENT salt throws, because doing so
    * would strand the on-chain commitment and guarantee a non-reveal slash.
    */
-  saveSalt(disputeId: bigint | number, salt: string): void {
+  saveSalt(disputeId: bigint | number, salt: string, round = 0): void {
     const data = this.read();
-    const k = this.key(disputeId);
+    const k = this.key(disputeId, round);
     const existing = data.salts[k];
     if (existing !== undefined) {
       if (existing !== salt) {
@@ -135,12 +142,12 @@ export class SaltKeystore {
   }
 
   /** Load a previously saved salt, or undefined if none is stored. */
-  loadSalt(disputeId: bigint | number): string | undefined {
-    return this.read().salts[this.key(disputeId)];
+  loadSalt(disputeId: bigint | number, round = 0): string | undefined {
+    return this.read().salts[this.key(disputeId, round)];
   }
 
-  /** True if a salt is stored for `disputeId`. */
-  hasSalt(disputeId: bigint | number): boolean {
-    return this.loadSalt(disputeId) !== undefined;
+  /** True if a salt is stored for `disputeId` in `round`. */
+  hasSalt(disputeId: bigint | number, round = 0): boolean {
+    return this.loadSalt(disputeId, round) !== undefined;
   }
 }

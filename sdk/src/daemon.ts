@@ -228,10 +228,16 @@ export class JurorDaemon {
     // Reuse a salt persisted by an earlier (possibly crashed) run — regenerating would
     // orphan any commitment already on-chain, making the vote unrevealable (gammaBps slash).
     // Only generate + persist when none exists yet; persist BEFORE submitting the commit.
-    let salt = this.keystore.loadSalt(id);
+    //
+    // Keyed by REDRAW, not by dispute alone. A quorum failure reruns commit/reveal under the same
+    // dispute id, and a juror who revealed in the previous round has already published that salt —
+    // reusing it would let anyone brute-force the new commitment over the eight possible choices
+    // and read the vote before the reveal window shut. Secret ballot, gone, for the jurors who did
+    // the right thing.
+    let salt = this.keystore.loadSalt(id, d.redraws);
     if (!salt) {
       salt = generateSalt();
-      this.keystore.saveSalt(id, salt);
+      this.keystore.saveSalt(id, salt, d.redraws);
     }
 
     await this.submit(id, `commitVote(${choice})`, () =>
@@ -263,7 +269,8 @@ export class JurorDaemon {
     if (!jr.committed) return; // never committed, nothing to reveal (already slashed silent)
     if (jr.dutySeats === 0) return; // committed alternate that wasn't promoted — no duty
 
-    const salt = this.keystore.loadSalt(id);
+    const d = await this.arb.getDispute(id);
+    const salt = this.keystore.loadSalt(id, d.redraws);
     if (!salt) {
       this.log(`dispute ${id}: SALT LOST — cannot reveal, will be slashed (gammaBps)`);
       return;
