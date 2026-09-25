@@ -89,6 +89,21 @@
             "type": "uint32"
           },
           {
+            "internalType": "uint8",
+            "name": "quorumFailure",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint8",
+            "name": "tieBreak",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint8",
+            "name": "defaultChoice",
+            "type": "uint8"
+          },
+          {
             "internalType": "uint16",
             "name": "appFeeBps",
             "type": "uint16"
@@ -566,6 +581,31 @@
       },
       {
         "indexed": false,
+        "internalType": "uint8",
+        "name": "ruling",
+        "type": "uint8"
+      },
+      {
+        "indexed": false,
+        "internalType": "bool",
+        "name": "fromTie",
+        "type": "bool"
+      }
+    ],
+    "name": "FallbackRuling",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "disputeId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
         "internalType": "uint32",
         "name": "seatedWeight",
         "type": "uint32"
@@ -610,6 +650,37 @@
       }
     ],
     "name": "PhaseAdvanced",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "disputeId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint8",
+        "name": "attempt",
+        "type": "uint8"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint64",
+        "name": "drawBlock",
+        "type": "uint64"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "feePot",
+        "type": "uint256"
+      }
+    ],
+    "name": "Redrawn",
     "type": "event"
   },
   {
@@ -1111,6 +1182,21 @@
         "type": "uint32"
       },
       {
+        "internalType": "uint8",
+        "name": "quorumFailure",
+        "type": "uint8"
+      },
+      {
+        "internalType": "uint8",
+        "name": "tieBreak",
+        "type": "uint8"
+      },
+      {
+        "internalType": "uint8",
+        "name": "defaultChoice",
+        "type": "uint8"
+      },
+      {
         "internalType": "uint16",
         "name": "appFeeBps",
         "type": "uint16"
@@ -1415,6 +1501,11 @@
             "internalType": "bool",
             "name": "voided",
             "type": "bool"
+          },
+          {
+            "internalType": "uint8",
+            "name": "redraws",
+            "type": "uint8"
           },
           {
             "internalType": "enum ArbitratorCore.DisputeState",

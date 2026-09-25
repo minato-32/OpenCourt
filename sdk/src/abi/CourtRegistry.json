@@ -247,6 +247,21 @@
             "type": "uint32"
           },
           {
+            "internalType": "uint8",
+            "name": "quorumFailure",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint8",
+            "name": "tieBreak",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint8",
+            "name": "defaultChoice",
+            "type": "uint8"
+          },
+          {
             "internalType": "uint16",
             "name": "appFeeBps",
             "type": "uint16"
@@ -393,6 +408,21 @@
             "type": "uint32"
           },
           {
+            "internalType": "uint8",
+            "name": "quorumFailure",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint8",
+            "name": "tieBreak",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint8",
+            "name": "defaultChoice",
+            "type": "uint8"
+          },
+          {
             "internalType": "uint16",
             "name": "appFeeBps",
             "type": "uint16"
@@ -522,6 +552,21 @@
             "internalType": "uint32",
             "name": "minPoolWeightMultiple",
             "type": "uint32"
+          },
+          {
+            "internalType": "uint8",
+            "name": "quorumFailure",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint8",
+            "name": "tieBreak",
+            "type": "uint8"
+          },
+          {
+            "internalType": "uint8",
+            "name": "defaultChoice",
+            "type": "uint8"
           },
           {
             "internalType": "uint16",

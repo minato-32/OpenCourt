@@ -74,6 +74,9 @@ export interface CourtConfig {
   quorumBps: number;
   commitRequired: boolean;
   minPoolWeightMultiple: number;
+  quorumFailure: number;
+  tieBreak: number;
+  defaultChoice: number;
   appFeeBps: number;
   protocolFeeBps: number;
   pinFeeBps: number;
@@ -101,11 +104,14 @@ export async function courtConfig(core: string): Promise<CourtConfig> {
     quorumBps: Number(c[14]),
     commitRequired: c[15] as boolean,
     minPoolWeightMultiple: Number(c[16]),
-    appFeeBps: Number(c[17]),
-    protocolFeeBps: Number(c[18]),
-    pinFeeBps: Number(c[19]),
-    treasury: c[20] as string,
-    pinner: c[21] as string,
+    quorumFailure: Number(c[17]),
+    tieBreak: Number(c[18]),
+    defaultChoice: Number(c[19]),
+    appFeeBps: Number(c[20]),
+    protocolFeeBps: Number(c[21]),
+    pinFeeBps: Number(c[22]),
+    treasury: c[23] as string,
+    pinner: c[24] as string,
   };
 }
 

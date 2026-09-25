@@ -14,6 +14,14 @@ import {
 } from '../lib/contracts';
 import { bps, pas, short } from '../lib/format';
 
+/** FR-ST-03: what the court does when the votes settle nothing. */
+const QUORUM_FAILURE: Record<number, string> = {
+  0: 'refuse to rule',
+  1: 'fall back to a default',
+  2: 'redraw, then refuse',
+};
+const TIE_BREAK: Record<number, string> = { 0: 'refuse to rule', 1: 'fall back to a default' };
+
 export function CourtCard({ court }: { court: CourtDeployment }) {
   const [cfg, setCfg] = useState<CourtConfig | null>(null);
   const [cost, setCost] = useState<bigint | null>(null);
@@ -91,6 +99,8 @@ export function CourtCard({ court }: { court: CourtDeployment }) {
         <Fact k="θ treasury cut" v={bps(cfg.thetaBps)} />
         <Fact k="quorum" v={bps(cfg.quorumBps)} />
         <Fact k="ballot" v={cfg.commitRequired ? 'secret (commit + reveal)' : 'open'} />
+        <Fact k="no quorum" v={QUORUM_FAILURE[cfg.quorumFailure] ?? String(cfg.quorumFailure)} />
+        <Fact k="tie" v={TIE_BREAK[cfg.tieBreak] ?? String(cfg.tieBreak)} />
         <Fact k="app / protocol take" v={`${bps(cfg.appFeeBps)} / ${bps(cfg.protocolFeeBps)}`} />
         <Fact k="draw / commit / reveal" v={`${cfg.drawWindowBlocks} / ${cfg.commitBlocks} / ${cfg.revealBlocks} blocks`} />
         <Fact k="activation delay" v={`${cfg.activationDelayBlocks} blocks`} />

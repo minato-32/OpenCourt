@@ -43,6 +43,8 @@ export interface Dispute {
   ruled: boolean;
   /** Resolved to 0 because most of the panel could not reach the evidence. */
   voided: boolean;
+  /** Panels already burned to a quorum failure on this dispute. */
+  redraws: number;
   state: DisputeState;
   evidenceDeadline: bigint;
   drawBlock: bigint;
@@ -98,6 +100,7 @@ export async function getDispute(core: string, id: bigint): Promise<Dispute> {
     tied: d.tied,
     ruled: d.ruled,
     voided: d.voided,
+    redraws: Number(d.redraws),
     state: Number(d.state) as DisputeState,
     evidenceDeadline: d.evidenceDeadline,
     drawBlock: d.drawBlock,
@@ -206,6 +209,7 @@ export function noVerdictReason(d: Dispute, cfg: CourtConfig): string | null {
   if (d.state !== DisputeState.Resolved || d.ruling !== 0) return null;
   if (d.voided) return 'the evidence could not be retrieved by most of the panel';
   if (d.tied) return 'genuine tie';
+  if (d.redraws > 0) return `too few jurors turned up, across ${d.redraws + 1} panels`;
   if (d.seatCount < cfg.panelSize) return 'undersubscribed draw — refunded';
   if (d.revealedCount < quorumNeeded(cfg)) return `quorum failed (${d.revealedCount}/${quorumNeeded(cfg)} revealed)`;
   return 'refused to arbitrate';

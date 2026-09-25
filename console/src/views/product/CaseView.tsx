@@ -156,6 +156,14 @@ export function CaseView({
 
       <p className="outcome-line">{outcomeLine}</p>
 
+      {dispute.redraws > 0 && (
+        <div className="banner warn">
+          {dispute.redraws === 1 ? 'A panel' : `${dispute.redraws} panels`} failed to reach quorum on
+          this case. Those jurors were released — paid if they voted, slashed if they went silent —
+          and their forfeited stake paid for the panel sitting now.
+        </div>
+      )}
+
       {mySeats > 0 && !decided && (
         <div className="callout">
           You are on this jury with {mySeats} seat{mySeats === 1 ? '' : 's'}.
