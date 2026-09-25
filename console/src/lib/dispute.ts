@@ -221,7 +221,10 @@ export function noVerdictReason(d: Dispute, cfg: CourtConfig): string | null {
   if (d.voided) return 'the evidence could not be retrieved by most of the panel';
   if (d.tied) return 'genuine tie';
   if (d.redraws > 0) return `too few jurors turned up, across ${d.redraws + 1} panels`;
-  if (d.fallbackRuling) return "the panel settled nothing, so the court's default was applied";
+  // The CAUSE, not the conclusion: callers already say the default was applied, and restating it
+  // here produced "the jury settled nothing — the panel settled nothing, so the default was
+  // applied — so the default applied". This is the branch an ordinary quorum miss lands on.
+  if (d.fallbackRuling) return `too few jurors revealed (${d.revealedCount}/${quorumNeeded(cfg)})`;
   if (d.seatCount < cfg.panelSize) return 'undersubscribed draw — refunded';
   if (d.revealedCount < quorumNeeded(cfg)) return `quorum failed (${d.revealedCount}/${quorumNeeded(cfg)} revealed)`;
   return 'refused to arbitrate';

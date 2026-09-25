@@ -257,7 +257,7 @@ export function DisputeActions({
             </button>
             <button
               className="btn ghost"
-              disabled={tx.state === 'signing' || round?.revealed || round?.reportedUnavailable}
+              disabled={tx.state === 'signing' || myDuty === 0 || round?.revealed || round?.reportedUnavailable}
               onClick={() => run('Report the record unreachable', 'reportUnavailable', [dispute.id])}
             >
               I cannot retrieve the evidence

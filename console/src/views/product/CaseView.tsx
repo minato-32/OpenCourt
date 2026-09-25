@@ -304,7 +304,10 @@ export function CaseView({
               );
             })}
             <p className="hint">
-              {dispute.revealedCount} of {seats.length} seats revealed · {quorumNeeded(cfg)} needed for a verdict
+              {/* Against the SEATED panel, not the over-draw. Comparing a seated-weight counter
+                  against every admitted claim read as a no-show whenever alternates were drawn. */}
+              {dispute.revealedCount} of {dispute.seatedWeight || seats.length} seats revealed ·{' '}
+              {quorumNeeded(cfg)} needed for a verdict
               {decided && dispute.revealedCount < quorumNeeded(cfg) ? ' — quorum was not met' : ''}
             </p>
           </div>
