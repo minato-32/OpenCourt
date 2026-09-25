@@ -95,7 +95,7 @@ export default function App() {
         <div className="brand">
           <span className="dot" />
           <div>
-            <h1>GetCourt</h1>
+            <h1>OpenCourt</h1>
             <p className="sub">
               {CHAIN.name} · block {head || '…'} ·{' '}
               {scan ? `indexing ${scan.done}/${scan.total} blocks` : `${indexed} events indexed locally`}

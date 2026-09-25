@@ -1,4 +1,4 @@
-# GetCourt
+# OpenCourt
 
 A shared, proof-of-personhood-gated **arbitration layer** any app or DAO can call when a decision
 needs human judgement. The protocol resolves disputes; it never knows what a dispute is about.

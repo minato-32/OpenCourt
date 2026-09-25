@@ -1,7 +1,7 @@
-# PRD — GetCourt for Polkadot
+# PRD — OpenCourt for Polkadot
 
 **Codename:** TBD · **Status:** Draft for build · **Owner:** Bhavya
-**Supersedes:** `getcourt-build-plan.md` (kept in-repo as `docs/spec.md`)
+**Supersedes:** `opencourt-build-plan.md` (kept in-repo as `docs/spec.md`)
 
 ---
 
@@ -463,7 +463,7 @@ Ship adapters for an OpenGov track, an OZ `Governor` veto hook, and a Safe modul
 **NFR:** the console is never the source of truth. Every console action must be reproducible via
 SDK or direct contract call.
 
-### 6.2 SDK (`@getcourt/sdk`)
+### 6.2 SDK (`@opencourt/sdk`)
 
 ```ts
 const jury = new JuryClient({ chain: 'paseo-asset-hub', signer });
@@ -643,7 +643,7 @@ Publish crate · DAO adapters · XCM · Filecoin/Crust evidence deals · timeloc
 ## 14. Appendix — workspace layout
 
 ```
-getcourt/
+opencourt/
 ├── contracts/src/interfaces/   IArbitrator IArbitrable IEligibility
 │                               IIncentivePolicy IFeePolicy
 ├── contracts/src/core/         ArbitratorCore CourtRegistry CourtRouter

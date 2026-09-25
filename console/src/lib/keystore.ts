@@ -1,7 +1,9 @@
 // Reveal-salt persistence. A lost salt is a gamma slash, so salts are stored per
 // (court, dispute, juror), encrypted with a passphrase, and always exportable.
 
-const DB = 'getcourt-salts';
+const DB = 'opencourt-salts';
+/** What this store was called before the project was renamed. Read once, then carried forward. */
+const LEGACY_DB = 'getcourt-salts';
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
@@ -20,7 +22,15 @@ const key = (core: string, disputeId: bigint | string, juror: string) =>
 
 const load = (): Record<string, SaltRecord> => {
   try {
-    return JSON.parse(localStorage.getItem(DB) ?? '{}');
+    const raw = localStorage.getItem(DB);
+    if (raw) return JSON.parse(raw);
+    // Renaming the store without this would orphan every salt already in a juror's browser, and
+    // a salt that cannot be found is a gamma slash on a vote they actually cast. Adopt the old
+    // store once, keep the old copy: nothing here is worth deleting to save a few bytes.
+    const legacy = localStorage.getItem(LEGACY_DB);
+    if (!legacy) return {};
+    localStorage.setItem(DB, legacy);
+    return JSON.parse(legacy);
   } catch {
     return {};
   }
@@ -115,7 +125,7 @@ export function exportBackup(): void {
   const blob = new Blob([JSON.stringify(all(), null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'getcourt-salts-backup.json';
+  a.download = 'opencourt-salts-backup.json';
   a.click();
   URL.revokeObjectURL(a.href);
 }

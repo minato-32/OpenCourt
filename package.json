@@ -1,8 +1,8 @@
 {
-  "name": "getcourt",
+  "name": "opencourt",
   "private": true,
   "version": "0.1.0",
-  "description": "GetCourt \u2014 a shared proof-of-personhood-gated arbitration layer for Polkadot (pallet-revive on Asset Hub). The protocol resolves disputes; it never knows what a dispute is about.",
+  "description": "OpenCourt \u2014 a shared proof-of-personhood-gated arbitration layer for Polkadot (pallet-revive on Asset Hub). The protocol resolves disputes; it never knows what a dispute is about.",
   "license": "GPL-3.0-only",
   "scripts": {
     "download:binaries": "bash scripts/download-binaries.sh",
@@ -18,8 +18,8 @@
     "lint": "solhint 'contracts/**/*.sol'",
     "lint:fix": "solhint 'contracts/**/*.sol' --fix --noPrompt",
     "typecheck": "tsc --noEmit",
-    "console": "pnpm --filter @getcourt/console dev",
-    "console:build": "pnpm --filter @getcourt/console build",
+    "console": "pnpm --filter @opencourt/console dev",
+    "console:build": "pnpm --filter @opencourt/console build",
     "demo:feature1": "pnpm compile:pvm && ts-node scripts/demo-feature1-live.ts",
     "compile:pvm": "hardhat compile --network paseo",
     "deploy:pop": "pnpm compile:pvm && ts-node scripts/deploy-personhood-court.ts",

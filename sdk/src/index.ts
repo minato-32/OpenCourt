@@ -1,5 +1,5 @@
 /**
- * @getcourt/sdk — standalone PAPI SDK for the GetCourt.
+ * @opencourt/sdk — standalone PAPI SDK for the OpenCourt.
  *
  * Layers:
  *   - transport:  ContractClient (read/write any pallet-revive contract)

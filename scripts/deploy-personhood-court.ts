@@ -189,7 +189,7 @@ async function main() {
       console.log(`   juror ${i + 1} ${juror} already attested`);
       continue;
     }
-    const credential = ethers.id(`getcourt-demo-credential-${i + 1}`);
+    const credential = ethers.id(`opencourt-demo-credential-${i + 1}`);
     await call(dep.signer, registry, regAbi, 'attest', [juror, credential]);
     const ok = (await read(registry, regAbi, 'isVerified', [juror]))[0] as boolean;
     console.log(`   juror ${i + 1} ${juror} attested -> isVerified ${ok}`);

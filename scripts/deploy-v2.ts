@@ -189,7 +189,7 @@ async function main() {
     const j = account(p);
     const already = (await read(registry, personhoodAbi, 'isVerified', [j.h160]))[0] as boolean;
     if (!already) {
-      await send(dep.signer, registry, personhoodAbi, 'attest', [j.h160, ethers.id(`getcourt-v2-juror-${i + 1}`)]);
+      await send(dep.signer, registry, personhoodAbi, 'attest', [j.h160, ethers.id(`opencourt-v2-juror-${i + 1}`)]);
     }
     const weight = (await read(eligibility, [
       { type: 'function', name: 'weightOf', stateMutability: 'view', inputs: [{ type: 'address' }, { type: 'uint96' }], outputs: [{ type: 'uint256' }] },

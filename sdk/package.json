@@ -1,8 +1,8 @@
 {
-  "name": "@getcourt/sdk",
+  "name": "@opencourt/sdk",
   "version": "0.1.0",
   "private": true,
-  "description": "Standalone PAPI SDK for the GetCourt — app helpers + headless juror daemon.",
+  "description": "Standalone PAPI SDK for the OpenCourt — app helpers + headless juror daemon.",
   "license": "GPL-3.0-only",
   "type": "module",
   "main": "dist/index.js",

@@ -10,7 +10,7 @@ import {IArbitrator} from "./IArbitrator.sol";
 ///         dispute id to those two ids.
 ///
 /// @dev The signatures are the standard's, verbatim, so an existing ERC-1497 indexer
-///      picks GetCourt up with no adapter. Leading-underscore parameter names are the
+///      picks OpenCourt up with no adapter. Leading-underscore parameter names are the
 ///      standard's too — kept rather than tidied, because the ABI names are part of it.
 ///
 ///      The evidence GROUP is the useful half. A dispute id only exists once a dispute

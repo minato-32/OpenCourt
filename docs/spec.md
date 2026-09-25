@@ -1,4 +1,4 @@
-# GetCourt on Polkadot — Build Plan
+# OpenCourt on Polkadot — Build Plan
 
 A shared arbitration layer that any app or DAO can call when a decision needs human judgement.
 The protocol resolves disputes; it never knows what a dispute is about.
@@ -294,7 +294,7 @@ Mainnet.
 ## 10. Workspace layout
 
 ```
-getcourt/
+opencourt/
 ├── contracts/
 │   ├── src/interfaces/     IArbitrator, IArbitrable, IEligibility,
 │   │                       IIncentivePolicy, IFeePolicy

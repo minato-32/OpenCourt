@@ -14,7 +14,7 @@ export interface IndexedEvent {
   args: Record<string, string>;
 }
 
-const DB_NAME = 'getcourt-index';
+const DB_NAME = 'opencourt-index';
 const STORE = 'events';
 const META = 'meta';
 /** Blocks pulled per backfill pass; a pass is one RPC round trip per block. */

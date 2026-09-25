@@ -171,7 +171,7 @@ const STATE = ['None', 'Evidence', 'Drawing', 'Committing', 'Revealing', 'Resolv
 
 /** Deterministic salt per juror, so a resumed run can still reveal what an earlier run committed. */
 const saltFor = (id: bigint, juror: string) =>
-  ethers.keccak256(ethers.toUtf8Bytes(`getcourt-demo-salt:${id}:${juror.toLowerCase()}`));
+  ethers.keccak256(ethers.toUtf8Bytes(`opencourt-demo-salt:${id}:${juror.toLowerCase()}`));
 
 async function main() {
   const issuer = account('');
@@ -193,7 +193,7 @@ async function main() {
     if (REGISTRY) {
       const verified = (await read(REGISTRY, regAbi, 'isVerified', [j.h160]))[0] as boolean;
       if (!verified) {
-        await send(issuer.signer, REGISTRY, regAbi, 'attest', [j.h160, ethers.id(`getcourt-juror-${j.label}`)]);
+        await send(issuer.signer, REGISTRY, regAbi, 'attest', [j.h160, ethers.id(`opencourt-juror-${j.label}`)]);
       }
     }
     const weight = (await read(CORE, coreAbi, 'weightOf', [j.h160]))[0] as bigint;
