@@ -93,6 +93,10 @@ export function DisputeActions({
   }
 
   const mySeats = round?.seatCount ?? 0;
+  // What the contract actually checks on a vote. An over-drawn alternate holds a seat but no
+  // duty, and in an open-ballot court is never promoted — showing it a vote button would only
+  // ever produce a NotSeated revert.
+  const myDuty = round?.dutySeats ?? 0;
 
   return (
     <div className="dispute-actions">
@@ -156,7 +160,7 @@ export function DisputeActions({
           </>
         )}
 
-        {dispute.state === DisputeState.Revealing && !cfg.commitRequired && mySeats > 0 && (
+        {dispute.state === DisputeState.Revealing && !cfg.commitRequired && myDuty > 0 && (
           <>
             <label className="field">
               <span>your vote</span>
@@ -179,6 +183,27 @@ export function DisputeActions({
               Open ballot: your vote is visible the moment it lands, and everyone still voting can
               see it.
             </span>
+          </>
+        )}
+
+        {dispute.state === DisputeState.Revealing && !cfg.commitRequired && (
+          <>
+            <button
+              className="btn ghost"
+              disabled={tx.state === 'signing' || myDuty === 0 || round?.revealed || round?.reportedUnavailable}
+              onClick={() => run('Report the record unreachable', 'reportUnavailable', [dispute.id])}
+            >
+              I cannot retrieve the evidence
+            </button>
+            {/* Ungated by seats on purpose: settling is a permissionless crank, and without it an
+                open-ballot court had no way to close a dispute from here at all. */}
+            <button
+              className="btn ghost"
+              disabled={tx.state === 'signing' || windowOpen}
+              onClick={() => run('Finalize', 'finalize', [dispute.id])}
+            >
+              Finalize
+            </button>
           </>
         )}
 
@@ -237,7 +262,7 @@ export function DisputeActions({
           </>
         )}
 
-        {dispute.state === DisputeState.Revealing && (
+        {dispute.state === DisputeState.Revealing && cfg.commitRequired && (
           <details className="relay">
             <summary>Reveal for another juror</summary>
             <p className="hint">
@@ -304,7 +329,7 @@ export function DisputeActions({
         </div>
       )}
 
-      {dispute.state === DisputeState.Revealing && mySeats > 0 && !round?.revealed && (
+      {dispute.state === DisputeState.Revealing && myDuty > 0 && !round?.revealed && (
         <p className="hint">
           Reporting the record unreachable answers for your seat instead of voting. If most of the
           jurors who turn up say the same, the case voids and nobody is slashed. If you are the only

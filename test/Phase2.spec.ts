@@ -125,7 +125,9 @@ describe('Phase-2 — submitEvidence', () => {
 
   it('bounds what one submitter can attach, and rejects an empty or oversized pointer', async () => {
     const [, treasury, payer, payee, stranger] = await ethers.getSigners();
-    const { core, escrow } = await deployCourt(baseCfg(treasury.address));
+    // A window wide enough that the eleven filings below all land inside it: the deadline is
+    // hard now, so a short window would close the record part-way through.
+    const { core, escrow } = await deployCourt(baseCfg(treasury.address, { evidenceBlocks: 50n }));
 
     await (await escrow.connect(payer).fund(payee.address, '', { value: 1000n })).wait();
     const cost = await core.arbitrationCost('0x');

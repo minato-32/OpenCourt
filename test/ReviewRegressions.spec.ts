@@ -269,6 +269,7 @@ describe('regression — only a fully funded position can take the appeal pot', 
     await expect(coord.connect(dust).claimAppealReward(1n, 0, 3))
       .to.changeEtherBalance(dust, 0n)
       .catch(() => undefined);
+    await (await coord.reclaimFees(1n, 1)).wait();
     const potLeft = 2n * cost + 1n - cost;
     await expect(coord.connect(payer).claimAppealReward(1n, 0, 1))
       .to.changeEtherBalance(payer, (cost * potLeft) / (2n * cost + 1n));
@@ -320,5 +321,112 @@ describe('regression — a quorum redraw treats an unavailability report as sile
     expect(await core.withdrawable(panel[2].address)).to.equal(75n); // silent
     // No conservation check here: the dispute is mid-flight, back in Drawing with its fee pot
     // still escrowed, so the core legitimately holds more than the sum of pullable balances.
+  });
+});
+
+describe('regression — an appeal round refunds to the pot that bought it, not to the app', () => {
+  it('returns an undersubscribed round\'s fee to the backers, never to the original fee-payer', async () => {
+    const signers = await ethers.getSigners();
+    const [, treasury, payer, payee] = signers;
+    const cs = [
+      await deployCourt(baseCfg(treasury.address, { panelSize: 3n })),
+      await deployCourt(baseCfg(treasury.address, { panelSize: 7n })),
+    ];
+    const Coord = await ethers.getContractFactory('AppealCoordinator');
+    const coord: any = await Coord.deploy(await Promise.all(cs.map((c) => c.getAddress())), 100n, 2);
+    await coord.waitForDeployment();
+    const App = await ethers.getContractFactory('MockArbitrable');
+    const app: any = await App.deploy(await coord.getAddress());
+    await app.waitForDeployment();
+    await (await app.createDispute(2, { value: await coord.arbitrationCost('0x') })).wait();
+
+    await mine(6);
+    await (await cs[0].openDrawing(1n)).wait();
+    await round(cs[0], baseCfg(treasury.address), signers.slice(4, 7), [
+      [signers[4], 1], [signers[5], 1], [signers[6], 1],
+    ]);
+    await (await cs[0].finalize(1n)).wait();
+
+    const cost = (await coord.appealCost(1n)) as bigint; // 70
+    await (await coord.connect(payer).fundAppeal(1n, 1, { value: cost })).wait();
+    await (await coord.connect(payee).fundAppeal(1n, 2, { value: cost })).wait();
+    await mine(101);
+    await (await coord.finalizeAppeal(1n)).wait();
+
+    // Nobody stakes in court B, so its draw is undersubscribed and it refunds the WHOLE fee.
+    await mine(6);
+    await (await cs[1].openDrawing(1n)).wait();
+    await mine(160);
+    await (await cs[1].finalize(1n)).wait();
+    expect((await coord.currentRuling(1n))[2]).to.equal(true); // finalized at round 1's refusal
+
+    // That money bought the appeal round; it belongs to the backers who paid for it. Routing it
+    // to the app would have sent it out to the party who funded round 0 and never backed this.
+    await (await coord.reclaimFees(1n, 1)).wait();
+    expect(await coord.coordRefund(1n)).to.equal(0n);
+
+    // Pot 140, spent 70, refunded 70 -> the full 140 is payable again. Round 1 refused (ruling 0)
+    // so no position prevailed and both sides are made whole.
+    await expect(coord.connect(payer).claimAppealReward(1n, 0, 1)).to.changeEtherBalance(payer, cost);
+    await expect(coord.connect(payee).claimAppealReward(1n, 0, 2)).to.changeEtherBalance(payee, cost);
+  });
+});
+
+describe('regression — the evidence deadline is hard', () => {
+  it('refuses a filing after the stated deadline, even before anyone cranks the record shut', async () => {
+    const signers = await ethers.getSigners();
+    const [, treasury, stranger] = signers;
+    const cfg = baseCfg(treasury.address);
+    const core = await deployCourt(cfg);
+    const App = await ethers.getContractFactory('MockArbitrable');
+    const app: any = await App.deploy(await core.getAddress());
+    await app.waitForDeployment();
+    await (await app.createDispute(2, { value: await core.arbitrationCost('0x') })).wait();
+
+    await (await core.connect(stranger).submitEvidence(1n, 'ipfs://in-time', ethers.ZeroHash, 1)).wait();
+
+    await mine(10); // past evidenceDeadline, but nobody has called openDrawing yet
+    expect(await core.disputeState(1n)).to.equal(1); // still Evidence
+    // Gating on state alone let an opponent keep filing in this gap and answer a party who
+    // stopped when the UI said the record closed.
+    await expect(core.connect(stranger).submitEvidence(1n, 'ipfs://too-late', ethers.ZeroHash, 1))
+      .to.be.revertedWithCustomError(core, 'DrawClosed');
+  });
+});
+
+describe('regression — a fallback ruling is not a verdict', () => {
+  it('records that the court supplied the answer, so a reader cannot mistake it for the panel\'s', async () => {
+    const signers = await ethers.getSigners();
+    const [, treasury] = signers;
+    const cfg = baseCfg(treasury.address, { quorumFailure: 1n, defaultChoice: 2n });
+    const core = await deployCourt(cfg);
+    const App = await ethers.getContractFactory('MockArbitrable');
+    const app: any = await App.deploy(await core.getAddress());
+    await app.waitForDeployment();
+    await (await app.createDispute(2, { value: await core.arbitrationCost('0x') })).wait();
+    await mine(6);
+    await (await core.openDrawing(1n)).wait();
+
+    const panel = signers.slice(2, 5);
+    await round(core, cfg, panel, [[panel[0], 1]]); // one vote for 1, below quorum
+    await (await core.finalize(1n)).wait();
+
+    const d = await core.getDispute(1n);
+    expect(d.ruling).to.equal(2n); // the court's default
+    expect(d.fallbackRuling).to.equal(true);
+    // Without that flag a reader compares choice 1 against ruling 2 and calls a PAID juror
+    // slashed. Settlement ran at ruling 0: they were rewarded.
+    expect(await core.withdrawable(panel[0].address)).to.be.gt(110n);
+
+    // A real verdict carries no such flag.
+    await (await app.createDispute(2, { value: await core.arbitrationCost('0x') })).wait();
+    await mine(6);
+    await (await core.openDrawing(2n)).wait();
+    const panel2 = signers.slice(5, 8);
+    await round(core, cfg, panel2, panel2.map((j) => [j, 1] as [any, number]), 2n);
+    await (await core.finalize(2n)).wait();
+    const d2 = await core.getDispute(2n);
+    expect(d2.ruling).to.equal(1n);
+    expect(d2.fallbackRuling).to.equal(false);
   });
 });

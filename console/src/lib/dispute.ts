@@ -43,6 +43,11 @@ export interface Dispute {
   ruled: boolean;
   /** Resolved to 0 because most of the panel could not reach the evidence. */
   voided: boolean;
+  /**
+   * The delivered ruling is the court's configured fallback, not one the votes produced.
+   * Settlement still ran at ruling 0, so every revealer was paid — read it before judging a seat.
+   */
+  fallbackRuling: boolean;
   /** Panels already burned to a quorum failure on this dispute. */
   redraws: number;
   state: DisputeState;
@@ -100,6 +105,7 @@ export async function getDispute(core: string, id: bigint): Promise<Dispute> {
     tied: d.tied,
     ruled: d.ruled,
     voided: d.voided,
+    fallbackRuling: d.fallbackRuling,
     redraws: Number(d.redraws),
     state: Number(d.state) as DisputeState,
     evidenceDeadline: d.evidenceDeadline,
@@ -191,7 +197,10 @@ export function seatOutcome(seat: Seat, round: JurorRound, d: Dispute): Outcome 
   if (seat.role === SeatRole.Released) return 'released';
   // In a void nobody is slashed: answering (either way) is paid, and silence just gets its stake.
   if (d.voided) return round.revealed || round.reportedUnavailable ? 'rewarded' : 'released';
-  const rewarded = round.revealed && (d.ruling === 0 || round.choice === d.ruling);
+  // A fallback ruling was not produced by the votes, and settlement ran at ruling 0 — every
+  // revealer was rewarded. Comparing a juror's choice against it would label paid jurors slashed.
+  const noVerdict = d.ruling === 0 || d.fallbackRuling;
+  const rewarded = round.revealed && (noVerdict || round.choice === d.ruling);
   if (rewarded) return 'rewarded';
   return seat.role === SeatRole.Seated && round.revealed ? 'slashed-beta' : 'slashed-gamma';
 }
@@ -206,10 +215,13 @@ export const OUTCOME_LABEL: Record<Outcome, string> = {
 
 /** Why a dispute carried no verdict. */
 export function noVerdictReason(d: Dispute, cfg: CourtConfig): string | null {
-  if (d.state !== DisputeState.Resolved || d.ruling !== 0) return null;
+  if (d.state !== DisputeState.Resolved) return null;
+  // A non-zero ruling that the court supplied itself is still a no-verdict settlement.
+  if (d.ruling !== 0 && !d.fallbackRuling) return null;
   if (d.voided) return 'the evidence could not be retrieved by most of the panel';
   if (d.tied) return 'genuine tie';
   if (d.redraws > 0) return `too few jurors turned up, across ${d.redraws + 1} panels`;
+  if (d.fallbackRuling) return "the panel settled nothing, so the court's default was applied";
   if (d.seatCount < cfg.panelSize) return 'undersubscribed draw — refunded';
   if (d.revealedCount < quorumNeeded(cfg)) return `quorum failed (${d.revealedCount}/${quorumNeeded(cfg)} revealed)`;
   return 'refused to arbitrate';

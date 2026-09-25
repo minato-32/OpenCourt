@@ -205,6 +205,10 @@ describe('FR-AP-02 — funding an appeal, per outcome', () => {
     expect((await coord.currentRuling(1n))[0]).to.equal(1n);
     expect(await escrow.pendingWithdrawals(payee.address)).to.equal(1000n);
 
+    // The round's own fee residue belongs to the pot that bought the round, so it has to be
+    // pulled in before anyone's share is fixed. The crank is permissionless.
+    await (await coord.reclaimFees(1n, 1)).wait();
+
     // Pot 140, round cost 70 -> 70 left, all of it to the winning bucket. The winner comes out
     // whole; the side that backed the losing outcome paid for the panel that overruled it.
     await expect(coord.connect(payee).claimAppealReward(1n, 0, 1)).to.changeEtherBalance(payee, cost);
@@ -235,6 +239,8 @@ describe('FR-AP-02 — funding an appeal, per outcome', () => {
     // Court B has only ever heard this one appeal, so inside it the child id is 1.
     await runRound(cs[1], 1n, signers.slice(4, 11), 2); // choice 2 wins
     expect((await coord.currentRuling(coordId))[0]).to.equal(2n);
+
+    await (await coord.reclaimFees(coordId, 1)).wait();
 
     // Pot 210, spent 70 -> 140 across a 70-wide winning bucket: each backer doubles their stake.
     await expect(coord.connect(payee).claimAppealReward(coordId, 0, 2)).to.changeEtherBalance(payee, cost);
