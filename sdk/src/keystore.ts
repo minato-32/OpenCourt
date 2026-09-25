@@ -143,7 +143,14 @@ export class SaltKeystore {
 
   /** Load a previously saved salt, or undefined if none is stored. */
   loadSalt(disputeId: bigint | number, round = 0): string | undefined {
-    return this.read().salts[this.key(disputeId, round)];
+    const salts = this.read().salts;
+    const own = salts[this.key(disputeId, round)];
+    if (own !== undefined) return own;
+    // A daemon running the older code wrote to the bare key whatever round the dispute was on,
+    // so a dispute already past a redraw has its live commitment stored there. Missing it would
+    // log SALT LOST and skip a reveal for a vote that was actually cast — a gamma slash on the
+    // juror who did everything right. Writes stay round-keyed; only the lookup falls back.
+    return salts[this.key(disputeId, 0)];
   }
 
   /** True if a salt is stored for `disputeId` in `round`. */
