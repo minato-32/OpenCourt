@@ -69,9 +69,18 @@ contract AppealCoordinator is IArbitrator, IArbitrable, IEvidenceGroups {
     /// @dev Kept per round, not just for the current one: a court refunds fees long after the
     ///      coordinator has moved on to a higher round, and the refund has to be attributable.
     mapping(uint256 => mapping(uint32 => uint256)) public roundChild;
+    /// @notice The app's original extraData — its declared parties — replayed on every round.
+    /// @dev Round 0 got it and the appeals did not, which quietly undid FR-SL-07 exactly where it
+    ///      matters most: a disputant could sit on the panel rehearing their own case. It also
+    ///      dropped their free-filing exemption, so a party was charged the third-party evidence
+    ///      bond on appeal.
+    mapping(uint256 => bytes) public coordExtraData;
     /// @notice What settlement left this coordinator for one coordId, awaiting the app's pull.
+    /// @dev An accumulator, not a one-shot: reclaimFees credits it once per ROUND, and a case can
+    ///      run several. Zeroing on payout is the whole guard — a latched "claimed" flag would
+    ///      strand every round after the first, and since claimRefund is permissionless anyone
+    ///      could have latched it at round 0.
     mapping(uint256 => uint256) public coordRefund;
-    mapping(uint256 => bool) public coordRefundClaimed;
 
     mapping(uint256 => mapping(uint32 => AppealPot)) public appealPot; // coordId => round => pot
     mapping(uint256 => mapping(uint32 => mapping(uint8 => uint256))) public choiceFunding;
@@ -97,6 +106,8 @@ contract AppealCoordinator is IArbitrator, IArbitrable, IEvidenceGroups {
     event AppealChoiceCovered(uint256 indexed coordId, uint32 round, uint8 choice);
     /// @notice Only one side paid to argue the next round, so that side takes the case.
     event WonByDefault(uint256 indexed coordId, uint32 round, uint8 choice);
+    /// @notice The next court would not take the case, so the appeal ends instead of wedging.
+    event AppealCourtRefused(uint256 indexed coordId, uint32 round);
     event AppealPotSettled(uint256 indexed coordId, uint32 round, uint8 winningChoice, uint256 payable_);
     event AppealRewardClaimed(uint256 indexed coordId, uint32 round, uint8 choice, address backer, uint256 amount);
     event RefundClaimed(uint256 indexed coordId, address indexed app, uint256 amount);
@@ -188,8 +199,9 @@ contract AppealCoordinator is IArbitrator, IArbitrable, IEvidenceGroups {
         if (msg.value != cost) revert WrongFee(cost);
 
         uint256 childId = c0.createDispute{value: msg.value}(choices, extraData);
+        coordExtraData[++coordCount] = extraData;
 
-        coordId = ++coordCount;
+        coordId = coordCount; // bumped above, alongside the stored party list
         CoordDispute storage cd = _disputes[coordId];
         cd.app = msg.sender;
         cd.choices = choices;
@@ -293,8 +305,12 @@ contract AppealCoordinator is IArbitrator, IArbitrable, IEvidenceGroups {
         uint32 r = cd.round;
         uint8 funded = fundedCount[coordId][r];
 
+        if (funded >= 2 && _advance(coordId, cd)) return;
         if (funded >= 2) {
-            _advance(coordId, cd);
+            // Nobody will hear it. The round's own ruling stands and every backer gets their
+            // money back — none of it was spent.
+            _settlePot(coordId, r, 0);
+            _finalize(coordId, cd);
             return;
         }
 
@@ -316,23 +332,34 @@ contract AppealCoordinator is IArbitrator, IArbitrable, IEvidenceGroups {
     }
 
     /// @dev Open the next round against the bigger court, paid for out of the pot.
-    function _advance(uint256 coordId, CoordDispute storage cd) private {
+    ///      Returns false — having changed nothing — when that court will not take the case.
+    ///
+    ///      The higher court can refuse: it may have drained below its readiness floor, or be
+    ///      otherwise unwilling. Letting that revert would leave the coordId wedged in Appealable
+    ///      with no other exit, and since the pot is only settled on the way out, every backer's
+    ///      money would be locked with it. An appeal nobody will hear ends the case instead.
+    function _advance(uint256 coordId, CoordDispute storage cd) private returns (bool) {
         uint32 r = cd.round;
         uint256 next = uint256(r) + 1;
         IArbitrator nc = courts[next];
         uint256 cost = nc.arbitrationCost("");
 
-        appealPot[coordId][r].spent = cost;
-        uint256 childId = nc.createDispute{value: cost}(cd.choices, "");
-        // Every round files into the SAME group. An appeal re-argues one case; splitting the
-        // record per round would hide round 1's evidence from round 2's panel.
-        IEvidenceGroups(address(nc)).linkEvidenceGroup(childId, cd.evidenceGroupId);
-        cd.round = uint32(next);
-        cd.childId = childId;
-        cd.state = CoordState.Pending;
-        _link[address(nc)][childId] = coordId;
-        roundChild[coordId][uint32(next)] = childId;
-        emit Appealed(coordId, cd.round, childId);
+        try nc.createDispute{value: cost}(cd.choices, coordExtraData[coordId]) returns (uint256 childId) {
+            appealPot[coordId][r].spent = cost;
+            // Every round files into the SAME group. An appeal re-argues one case; splitting the
+            // record per round would hide round 1's evidence from round 2's panel.
+            IEvidenceGroups(address(nc)).linkEvidenceGroup(childId, cd.evidenceGroupId);
+            cd.round = uint32(next);
+            cd.childId = childId;
+            cd.state = CoordState.Pending;
+            _link[address(nc)][childId] = coordId;
+            roundChild[coordId][uint32(next)] = childId;
+            emit Appealed(coordId, cd.round, childId);
+            return true;
+        } catch {
+            emit AppealCourtRefused(coordId, uint32(next));
+            return false;
+        }
     }
 
     /// @dev Fix what each backer of round `r`'s appeal is owed, once the outcome is known.
@@ -420,9 +447,11 @@ contract AppealCoordinator is IArbitrator, IArbitrable, IEvidenceGroups {
     function claimRefund(uint256 coordId) external noReentrant returns (uint256 amount) {
         CoordDispute storage cd = _disputes[coordId];
         if (cd.app == address(0)) revert UnknownDispute();
+        // App-only, for the same reason the courts' own claimRefund is: a pull-payment app has no
+        // way to credit value that arrives unannounced, so an open call is a way to strand it.
+        if (msg.sender != cd.app) revert OnlyApp();
         amount = coordRefund[coordId];
-        if (amount == 0 || coordRefundClaimed[coordId]) revert NothingToWithdraw();
-        coordRefundClaimed[coordId] = true;
+        if (amount == 0) revert NothingToWithdraw();
         coordRefund[coordId] = 0;
         _pay(cd.app, amount);
         emit RefundClaimed(coordId, cd.app, amount);
