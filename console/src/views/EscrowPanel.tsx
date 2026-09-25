@@ -33,6 +33,7 @@ export function EscrowPanel({
   const [pending, setPending] = useState<bigint>(0n);
   const [payee, setPayee] = useState('');
   const [amount, setAmount] = useState('20');
+  const [agreement, setAgreement] = useState('');
   const [tx, setTx] = useState<Tx>({ state: 'idle' });
 
   const refresh = useCallback(async () => {
@@ -104,10 +105,19 @@ export function EscrowPanel({
               <span>amount (PAS)</span>
               <input className="input" value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" />
             </label>
+            <label className="field">
+              <span>agreement (ERC-1497 meta-evidence, optional)</span>
+              <input
+                className="input wide"
+                placeholder="ipfs://bafy… — the terms a jury would read"
+                value={agreement}
+                onChange={(e) => setAgreement(e.target.value.trim())}
+              />
+            </label>
             <button
               className="btn"
               disabled={tx.state === 'signing' || amountEvm === 0n || !/^0x[0-9a-fA-F]{40}$/.test(payee)}
-              onClick={() => run('Fund escrow', 'fund', [payee], amountEvm)}
+              onClick={() => run('Fund escrow', 'fund', [payee, agreement], amountEvm)}
             >
               Fund escrow
             </button>

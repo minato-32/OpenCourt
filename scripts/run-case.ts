@@ -207,7 +207,7 @@ async function main() {
   } else {
     console.log('\n2. Case');
     await fund(issuer.signer, payee.ss58, 20n * PAS_PLANCK);
-    await send(issuer.signer, ESCROW, escrowAbi, 'fund', [payee.h160], 20n * PAS_EVM);
+    await send(issuer.signer, ESCROW, escrowAbi, 'fund', [payee.h160, ''], 20n * PAS_EVM);
     const escrowId = (await read(ESCROW, escrowAbi, 'escrowCount'))[0] as bigint;
     const cost = (await read(CORE, coreAbi, 'arbitrationCost', ['0x']))[0] as bigint;
     await send(issuer.signer, ESCROW, escrowAbi, 'dispute', [escrowId], cost);

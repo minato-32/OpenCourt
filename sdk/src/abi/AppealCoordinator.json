@@ -10,6 +10,11 @@
         "internalType": "uint64",
         "name": "_appealWindowBlocks",
         "type": "uint64"
+      },
+      {
+        "internalType": "uint8",
+        "name": "maxRounds_",
+        "type": "uint8"
       }
     ],
     "stateMutability": "nonpayable",
@@ -27,6 +32,21 @@
   },
   {
     "inputs": [],
+    "name": "BadChoice",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "BadCourtLadder",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "BadRoundCap",
+    "type": "error"
+  },
+  {
+    "inputs": [],
     "name": "NoCourts",
     "type": "error"
   },
@@ -38,6 +58,11 @@
   {
     "inputs": [],
     "name": "NotCurrentCourt",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "NothingFunded",
     "type": "error"
   },
   {
@@ -80,6 +105,136 @@
     "inputs": [],
     "name": "WrongState",
     "type": "error"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "coordId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint32",
+        "name": "round",
+        "type": "uint32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint8",
+        "name": "choice",
+        "type": "uint8"
+      }
+    ],
+    "name": "AppealChoiceCovered",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "coordId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint32",
+        "name": "round",
+        "type": "uint32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint8",
+        "name": "choice",
+        "type": "uint8"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "backer",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "name": "AppealFunded",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "coordId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint32",
+        "name": "round",
+        "type": "uint32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint8",
+        "name": "winningChoice",
+        "type": "uint8"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "payable_",
+        "type": "uint256"
+      }
+    ],
+    "name": "AppealPotSettled",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "coordId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint32",
+        "name": "round",
+        "type": "uint32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint8",
+        "name": "choice",
+        "type": "uint8"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "backer",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "name": "AppealRewardClaimed",
+    "type": "event"
   },
   {
     "anonymous": false,
@@ -179,6 +334,31 @@
         "type": "uint256"
       },
       {
+        "indexed": true,
+        "internalType": "address",
+        "name": "app",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "name": "RefundClaimed",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "coordId",
+        "type": "uint256"
+      },
+      {
         "indexed": false,
         "internalType": "uint32",
         "name": "round",
@@ -264,17 +444,29 @@
     "type": "event"
   },
   {
+    "anonymous": false,
     "inputs": [
       {
+        "indexed": true,
         "internalType": "uint256",
         "name": "coordId",
         "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint32",
+        "name": "round",
+        "type": "uint32"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint8",
+        "name": "choice",
+        "type": "uint8"
       }
     ],
-    "name": "appeal",
-    "outputs": [],
-    "stateMutability": "payable",
-    "type": "function"
+    "name": "WonByDefault",
+    "type": "event"
   },
   {
     "inputs": [
@@ -290,6 +482,45 @@
         "internalType": "uint256",
         "name": "",
         "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint32",
+        "name": "",
+        "type": "uint32"
+      }
+    ],
+    "name": "appealPot",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "total",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "spent",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint8",
+        "name": "winningChoice",
+        "type": "uint8"
+      },
+      {
+        "internalType": "bool",
+        "name": "settled",
+        "type": "bool"
       }
     ],
     "stateMutability": "view",
@@ -328,6 +559,117 @@
     "type": "function"
   },
   {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint32",
+        "name": "",
+        "type": "uint32"
+      },
+      {
+        "internalType": "uint8",
+        "name": "",
+        "type": "uint8"
+      }
+    ],
+    "name": "choiceFunding",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "coordId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint32",
+        "name": "r",
+        "type": "uint32"
+      },
+      {
+        "internalType": "uint8",
+        "name": "choice",
+        "type": "uint8"
+      }
+    ],
+    "name": "claimAppealReward",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "coordId",
+        "type": "uint256"
+      }
+    ],
+    "name": "claimRefund",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint32",
+        "name": "",
+        "type": "uint32"
+      },
+      {
+        "internalType": "uint8",
+        "name": "",
+        "type": "uint8"
+      },
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "name": "contributionOf",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [],
     "name": "coordCount",
     "outputs": [
@@ -335,6 +677,44 @@
         "internalType": "uint256",
         "name": "",
         "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "coordRefund",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "coordRefundClaimed",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
       }
     ],
     "stateMutability": "view",
@@ -482,6 +862,77 @@
         "internalType": "uint256",
         "name": "coordId",
         "type": "uint256"
+      },
+      {
+        "internalType": "uint8",
+        "name": "choice",
+        "type": "uint8"
+      }
+    ],
+    "name": "fundAppeal",
+    "outputs": [],
+    "stateMutability": "payable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint32",
+        "name": "",
+        "type": "uint32"
+      },
+      {
+        "internalType": "uint8",
+        "name": "",
+        "type": "uint8"
+      }
+    ],
+    "name": "fundedChoices",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint32",
+        "name": "",
+        "type": "uint32"
+      }
+    ],
+    "name": "fundedCount",
+    "outputs": [
+      {
+        "internalType": "uint8",
+        "name": "",
+        "type": "uint8"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "coordId",
+        "type": "uint256"
       }
     ],
     "name": "getDispute",
@@ -571,6 +1022,32 @@
     "type": "function"
   },
   {
+    "inputs": [],
+    "name": "maxRounds",
+    "outputs": [
+      {
+        "internalType": "uint8",
+        "name": "",
+        "type": "uint8"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "panelSize",
+    "outputs": [
+      {
+        "internalType": "uint32",
+        "name": "",
+        "type": "uint32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [
       {
         "internalType": "uint256",
@@ -578,9 +1055,9 @@
         "type": "uint256"
       },
       {
-        "internalType": "uint256",
-        "name": "courtIndex",
-        "type": "uint256"
+        "internalType": "uint32",
+        "name": "round",
+        "type": "uint32"
       }
     ],
     "name": "reclaimFees",
@@ -605,6 +1082,64 @@
     "inputs": [
       {
         "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint32",
+        "name": "",
+        "type": "uint32"
+      },
+      {
+        "internalType": "uint8",
+        "name": "",
+        "type": "uint8"
+      },
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "name": "rewardClaimed",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint32",
+        "name": "",
+        "type": "uint32"
+      }
+    ],
+    "name": "roundChild",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
         "name": "childId",
         "type": "uint256"
       },
@@ -622,6 +1157,30 @@
     "name": "rule",
     "outputs": [],
     "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint32",
+        "name": "",
+        "type": "uint32"
+      }
+    ],
+    "name": "soleFundedChoice",
+    "outputs": [
+      {
+        "internalType": "uint8",
+        "name": "",
+        "type": "uint8"
+      }
+    ],
+    "stateMutability": "view",
     "type": "function"
   },
   {

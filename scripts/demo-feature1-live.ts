@@ -345,7 +345,7 @@ async function main() {
 
   // ------------------------------------------------------- 3. escrow + dispute
   console.log('3. Funding an escrow and raising a dispute');
-  await write(deployer.signer, escrowAddr, escrowAbi, 'fund', [payee.h160], ESCROW_AMOUNT);
+  await write(deployer.signer, escrowAddr, escrowAbi, 'fund', [payee.h160, ''], ESCROW_AMOUNT);
   const escrowId = (await read(escrowAddr, escrowAbi, 'escrowCount'))[0] as bigint;
   await write(deployer.signer, escrowAddr, escrowAbi, 'dispute', [escrowId], toPlanck(cost));
   const disputeId = (await read(core, coreAbi, 'disputeCount'))[0] as bigint;

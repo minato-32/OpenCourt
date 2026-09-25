@@ -119,7 +119,7 @@ async function main() {
   console.log('   payee balance', Number(funded) / 1e10, 'PAS\n');
 
   console.log('1. Escrow');
-  await send(payer.signer, ESCROW, escrowAbi, 'fund', [payee.h160], 20n * PAS_EVM);
+  await send(payer.signer, ESCROW, escrowAbi, 'fund', [payee.h160, ''], 20n * PAS_EVM);
   const escrowId = (await read(ESCROW, escrowAbi, 'escrowCount'))[0] as bigint;
   console.log('   escrow', String(escrowId), 'funded with 20 PAS');
 
