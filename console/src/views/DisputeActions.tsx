@@ -6,6 +6,7 @@ import { CHAIN, coreAbi, type CourtConfig, type CourtDeployment } from '../lib/c
 import {
   DisputeState,
   commitmentOf,
+  jurorRoundOf,
   phaseDeadline,
   type Dispute,
   type JurorRound,
@@ -71,10 +72,14 @@ export function DisputeActions({
     if (!account) return;
     if (!pass) return setTx({ state: 'error', msg: 'Set a passphrase first — it encrypts the salt you must reveal with.' });
     // A commitment on chain is bound to ONE salt for the life of the round. Overwriting a stored
-    // salt makes that commitment unrevealable, which is a guaranteed gamma slash — and the window
-    // for it is wide: a lagging refresh re-enables this button, a second click replaces the salt,
-    // the transaction is then refused as AlreadyCommitted, and the damage is already done.
-    if (round?.committed) {
+    // salt makes that commitment unrevealable, which is a guaranteed gamma slash.
+    //
+    // Read the round FRESH rather than trusting the `round` prop: the prop is what gates this
+    // button, so whenever it is stale enough to let a second click through it is stale enough to
+    // pass a check made against it. This asks the chain instead.
+    setTx({ state: 'signing', msg: 'Checking your round…' });
+    const live = await jurorRoundOf(court.core, dispute.id, account.h160).catch(() => null);
+    if (live?.committed) {
       return setTx({
         state: 'error',
         msg: 'You have already committed on this dispute. Committing again would replace the stored salt and make your on-chain vote unrevealable.',
@@ -84,7 +89,8 @@ export function DisputeActions({
     const params = [dispute.id, commitmentOf(dispute.id, account.h160, choice, salt)];
 
     // Simulate FIRST, store only once it is going to be signed. Storing up front meant a commit
-    // that never left the browser had already overwritten the salt of one that did.
+    // that never left the browser had already overwritten the salt of one that did. This is the
+    // guarantee the flow actually rests on; the read above only makes the message a better one.
     setTx({ state: 'signing', msg: `Commit choice ${choice}…` });
     const would = await simulate(account.ss58, court.core, coreAbi, 'commitVote', params);
     if (would) {

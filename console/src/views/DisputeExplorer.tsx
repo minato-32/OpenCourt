@@ -135,7 +135,16 @@ export function DisputeExplorer({
                   <Fact k="choices" v={String(d.choices)} />
                   <Fact k="ruled (delivered)" v={d.ruled ? 'yes' : 'no'} />
                   <Fact k="tied" v={d.tied ? 'yes' : 'no'} />
-                  <Fact k="ruling source" v={d.fallbackRuling ? 'court default' : 'the panel'} />
+                  <Fact
+                    k="ruling source"
+                    v={
+                      d.state !== DisputeState.Resolved
+                        ? '—'
+                        : d.fallbackRuling
+                          ? 'court default'
+                          : 'the panel'
+                    }
+                  />
                   <Fact k="fee pot" v={pas(d.feePot)} />
                   <Fact k="draw block" v={String(d.drawBlock)} />
                   <Fact k="commit deadline" v={String(d.commitDeadline)} />
