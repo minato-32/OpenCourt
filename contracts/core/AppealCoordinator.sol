@@ -371,7 +371,11 @@ contract AppealCoordinator is IArbitrator, IArbitrable, IEvidenceGroups {
             p.settled = true;
             return;
         }
-        if (outcome != 0 && choiceFunding[coordId][r][outcome] == 0) outcome = 0;
+        // Only a FULLY funded position can win the pot. Merely non-zero funding let anyone drop
+        // a single wei on a third choice and, if the panel happened to land there, collect the
+        // entire residual — money put up by the two positions that actually paid for the round,
+        // since the payout divides by that choice's own funding.
+        if (outcome != 0 && fundedChoices[coordId][r][outcome] != 1) outcome = 0;
         p.winningChoice = outcome;
         p.settled = true;
         emit AppealPotSettled(coordId, r, outcome, p.total - p.spent);
@@ -414,7 +418,11 @@ contract AppealCoordinator is IArbitrator, IArbitrable, IEvidenceGroups {
         _deliver(coordId, cd, true);
     }
 
-    /// @notice Pull any fee residue this contract accumulated (see reclaimFees).
+    /// @inheritdoc IArbitrator
+    /// @dev Present for interface conformance and effectively unused: this coordinator routes
+    ///      every refund per coordId through reclaimFees + claimRefund, because a lump an app
+    ///      cannot attribute to a case is a lump it cannot credit to anyone. Nothing writes
+    ///      `withdrawable`, so this reverts. Apps should call claimRefund(coordId).
     function withdraw() external noReentrant {
         uint256 amount = withdrawable[msg.sender];
         if (amount == 0) revert NothingToWithdraw();
