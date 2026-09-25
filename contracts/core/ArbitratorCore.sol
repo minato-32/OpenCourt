@@ -614,12 +614,17 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
     }
 
     /// @inheritdoc IArbitrator
-    /// @dev Paid straight to the app rather than parked: the app is the only address this can go
-    ///      to, and pushing here cannot brick anything — a reverting app fails only this call,
-    ///      never settlement, which already finished. An app that swept the lump with withdraw()
-    ///      first has nothing left to tag, and is told so rather than underflowing.
+    /// @dev Paid straight to the app, and only at the app's own request: it is the one contract
+    ///      that knows which of its cases the money belongs to. Pushing here cannot brick
+    ///      anything — a reverting app fails only this call, never settlement, which already
+    ///      finished. An app that swept the lump with withdraw() first has nothing left to tag,
+    ///      and is told so rather than underflowing.
     function claimRefund(uint256 disputeId) external noReentrant returns (uint256 amount) {
         Dispute storage d = _disputes[disputeId];
+        // App-only. The money can go nowhere else, so restricting the caller costs nothing — and
+        // leaving it open let anyone push value into the app outside the app's own accounting,
+        // where a pull-payment app has no hook to credit it to anybody. It would simply sit there.
+        if (msg.sender != d.app) revert OnlyApp();
         if (d.state != DisputeState.Resolved) revert WrongState();
         amount = refundOf[disputeId];
         if (amount == 0 || refundClaimed[disputeId] || withdrawable[d.app] < amount) {
@@ -952,8 +957,12 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
             if (lr.revealed || lr.reportedUnavailable) owed += config.jurorFee;
             else pot += (look.slotStake * config.gammaBps) / BPS;
         }
-        uint256 nextRound = uint256(config.panelSize) * config.jurorFee;
-        if (d.feePot + pot < owed + nextRound) return false;
+        // What the retry needs is the GROSSED-UP cost, not the bare wage bill. Settlement takes
+        // the app, protocol and pinning cuts off the pot it is handed, and only what survives
+        // that pays the panel — so a pot of exactly panelSize * jurorFee underflows _settle the
+        // moment any of those takes is non-zero, and finalize() is the only way out of Revealing.
+        // That would strand the dispute and the retry panel's stakes for good.
+        if (d.feePot + pot < owed + arbCost) return false;
         pot = 0; // recounted for real below
 
         for (uint256 i = 0; i < n; i++) {
