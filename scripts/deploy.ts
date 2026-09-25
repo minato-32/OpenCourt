@@ -93,6 +93,9 @@ interface CourtConfig {
   quorumBps: number;
   commitRequired: boolean;
   minPoolWeightMultiple: number;
+  quorumFailure: number;
+  tieBreak: number;
+  defaultChoice: number;
   appFeeBps: number;
   protocolFeeBps: number;
   pinFeeBps: number;
@@ -131,6 +134,9 @@ function demoCourtConfig(treasury: string): CourtConfig {
     quorumBps: 5000, // >= 50% of the panel must reveal
     commitRequired: true, // secret ballot; open voting is opt-in per court
     minPoolWeightMultiple: 0, // demo: no readiness floor
+    quorumFailure: 0, // refuse to rule when the panel produces no verdict
+    tieBreak: 0,
+    defaultChoice: 0,
     appFeeBps: 0, // demo: no app/protocol take -> cost == panelSize * jurorFee
     protocolFeeBps: 0,
     pinFeeBps: 0,

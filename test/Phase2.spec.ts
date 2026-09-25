@@ -25,6 +25,9 @@ type Cfg = {
   quorumBps: bigint;
   commitRequired: boolean;
   minPoolWeightMultiple: bigint;
+  quorumFailure: bigint;
+  tieBreak: bigint;
+  defaultChoice: bigint;
   appFeeBps: bigint;
   protocolFeeBps: bigint;
   pinFeeBps: bigint;
@@ -50,6 +53,9 @@ function baseCfg(treasury: string, over: Partial<Cfg> = {}): Cfg {
     quorumBps: 5000n,
     commitRequired: true,
     minPoolWeightMultiple: 0n,
+    quorumFailure: 0n,
+    tieBreak: 0n,
+    defaultChoice: 0n,
     appFeeBps: 0n,
     protocolFeeBps: 0n,
     pinFeeBps: 0n,

@@ -147,6 +147,9 @@ function courtConfig(treasury: string) {
     quorumBps: 5000,
     commitRequired: true,
     minPoolWeightMultiple: 0,
+    quorumFailure: 0, // refuse to rule when the panel produces no verdict
+    tieBreak: 0,
+    defaultChoice: 0,
     appFeeBps: 0,
     protocolFeeBps: 0,
     pinFeeBps: 0,
