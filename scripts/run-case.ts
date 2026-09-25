@@ -170,8 +170,25 @@ const commitmentOf = (id: bigint, juror: string, choice: number, salt: string) =
 const STATE = ['None', 'Evidence', 'Drawing', 'Committing', 'Revealing', 'Resolved'] as const;
 
 /** Deterministic salt per juror, so a resumed run can still reveal what an earlier run committed. */
-const saltFor = (id: bigint, juror: string) =>
-  ethers.keccak256(ethers.toUtf8Bytes(`opencourt-demo-salt:${id}:${juror.toLowerCase()}`));
+const saltFor = (id: bigint, juror: string, domain = 'opencourt') =>
+  ethers.keccak256(ethers.toUtf8Bytes(`${domain}-demo-salt:${id}:${juror.toLowerCase()}`));
+
+/**
+ * The salt that actually matches what this juror committed.
+ *
+ * The project rename moved the salt domain, and this derivation is the ONLY record of it — there
+ * is no keystore to fall back on. A case committed before the rename and resumed after it would
+ * derive a different salt, fail the commitment check, and leave the demo jurors silent through the
+ * reveal window: a real gamma slash on the live court. So try the old domain too, and believe the
+ * chain over the current name.
+ */
+const revealSalt = (id: bigint, juror: string, choice: number, commitment: string) => {
+  for (const domain of ['opencourt', 'getcourt']) {
+    const salt = saltFor(id, juror, domain);
+    if (commitmentOf(id, juror, choice, salt) === commitment) return salt;
+  }
+  return saltFor(id, juror); // no commitment to match yet: this round's own domain
+};
 
 async function main() {
   const issuer = account('');
@@ -306,7 +323,11 @@ async function main() {
       for (const [i, j] of jurors.entries()) {
         const round: any = (await read(CORE, coreAbi, 'jurorRoundOf', [id, j.h160]))[0];
         if (round.revealed || Number(round.dutySeats) === 0) continue;
-        await send(j.signer, CORE, coreAbi, 'revealVote', [id, VOTES[i], saltFor(id, j.h160)]);
+        await send(j.signer, CORE, coreAbi, 'revealVote', [
+          id,
+          VOTES[i],
+          revealSalt(id, j.h160, VOTES[i], round.commitment as string),
+        ]);
         console.log(`   ${j.label.padEnd(8)} revealed ${VOTES[i]}`);
       }
       await waitFor(BigInt(d.revealDeadline) + 1n, 'reveal window closes');
