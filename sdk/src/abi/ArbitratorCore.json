@@ -104,6 +104,11 @@
             "type": "uint8"
           },
           {
+            "internalType": "bool",
+            "name": "closedPool",
+            "type": "bool"
+          },
+          {
             "internalType": "uint16",
             "name": "appFeeBps",
             "type": "uint16"
@@ -1197,6 +1202,11 @@
         "type": "uint8"
       },
       {
+        "internalType": "bool",
+        "name": "closedPool",
+        "type": "bool"
+      },
+      {
         "internalType": "uint16",
         "name": "appFeeBps",
         "type": "uint16"
@@ -1876,6 +1886,19 @@
         "internalType": "string",
         "name": "",
         "type": "string"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "poolIsClosed",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
       }
     ],
     "stateMutability": "view",

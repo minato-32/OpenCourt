@@ -2,7 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import { read, simulate, write } from '../../lib/chain';
-import { CHAIN, coreAbi, escrowAbi, type CourtConfig, type CourtDeployment } from '../../lib/contracts';
+import {
+  CHAIN,
+  coreAbi,
+  escrowAbi,
+  policyDescriptor,
+  type CourtConfig,
+  type CourtDeployment,
+} from '../../lib/contracts';
 import {
   DisputeState,
   getEvidence,
@@ -67,6 +74,8 @@ export function CaseView({
   // the escrow cannot name, and the UI would then charge them a bond the contract refuses to
   // accept from them, so they could not file at all.
   const [isParty, setIsParty] = useState(false);
+  // FR-PG-08: whoever reads a verdict is entitled to know which kind of jury reached it.
+  const [poolRule, setPoolRule] = useState('');
 
   useEffect(() => {
     let live = true;
@@ -105,6 +114,9 @@ export function CaseView({
       } else if (live) {
         setIsParty(false);
       }
+
+      const rule = await policyDescriptor(court.core).catch(() => '');
+      if (live) setPoolRule(rule);
 
       const events = await eventsForDispute(court.core, dispute.id.toString());
       if (live) setTimeline(events);
@@ -277,6 +289,16 @@ export function CaseView({
 
       <section className="case-block">
         <h3>Panel</h3>
+        {/* FR-PG-08 — mandatory disclosure, shown next to the verdict rather than buried in a
+            settings screen. A closed pool is peer review by an app's own members; an open one is
+            third-party arbitration. Both are legitimate and a reader must be able to tell which
+            one decided their case. */}
+        <div className={`banner ${cfg.closedPool ? 'warn' : 'gate'}`}>
+          {cfg.closedPool
+            ? 'This panel was drawn from a pool the application chooses. That is peer review by its own members, not neutral third-party arbitration — and the result can be appealed to a pool the application does not control.'
+            : 'This panel was drawn from an open pool: anyone who meets the court\'s published rule and stakes may sit on it.'}
+          {poolRule && <div className="hint mono">{poolRule}</div>}
+        </div>
         {seats.length === 0 ? (
           <p className="muted">No seats claimed yet.</p>
         ) : (

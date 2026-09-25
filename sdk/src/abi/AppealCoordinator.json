@@ -47,6 +47,11 @@
   },
   {
     "inputs": [],
+    "name": "ClosedPoolNeedsNeutralParent",
+    "type": "error"
+  },
+  {
+    "inputs": [],
     "name": "NoCourts",
     "type": "error"
   },
@@ -1140,6 +1145,19 @@
         "internalType": "uint32",
         "name": "",
         "type": "uint32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "poolIsClosed",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
       }
     ],
     "stateMutability": "view",

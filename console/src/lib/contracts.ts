@@ -77,6 +77,7 @@ export interface CourtConfig {
   quorumFailure: number;
   tieBreak: number;
   defaultChoice: number;
+  closedPool: boolean;
   appFeeBps: number;
   protocolFeeBps: number;
   pinFeeBps: number;
@@ -107,11 +108,12 @@ export async function courtConfig(core: string): Promise<CourtConfig> {
     quorumFailure: Number(c[17]),
     tieBreak: Number(c[18]),
     defaultChoice: Number(c[19]),
-    appFeeBps: Number(c[20]),
-    protocolFeeBps: Number(c[21]),
-    pinFeeBps: Number(c[22]),
-    treasury: c[23] as string,
-    pinner: c[24] as string,
+    closedPool: c[20] as boolean,
+    appFeeBps: Number(c[21]),
+    protocolFeeBps: Number(c[22]),
+    pinFeeBps: Number(c[23]),
+    treasury: c[24] as string,
+    pinner: c[25] as string,
   };
 }
 
