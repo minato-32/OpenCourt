@@ -180,6 +180,15 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
     ///         stake, so settlement can never spend one and the never-mint sum stays checkable.
     uint256 public bondsHeld;
 
+    /// @notice What settlement left the app for a single dispute, and whether it has been taken.
+    /// @dev Tagged per dispute on purpose. `withdraw()` hands a caller EVERYTHING credited to it,
+    ///      which an app holding several disputes cannot attribute — it sees one lump and has to
+    ///      guess which case it came from. Every app built on this (the escrow, the appeal
+    ///      coordinator) was mis-crediting that lump to whichever dispute id the caller named.
+    ///      claimRefund(disputeId) pays exactly this dispute's share, so there is nothing to guess.
+    mapping(uint256 => uint256) public refundOf;
+    mapping(uint256 => bool) public refundClaimed;
+
     // reentrancy guard (custom, matching p2p-market convention — not OZ)
     uint256 private _lock = 1;
     modifier noReentrant() {
@@ -208,6 +217,7 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
     event RulingDeliveryFailed(uint256 indexed disputeId);
     event Slashed(uint256 indexed disputeId, address indexed juror, uint256 amount);
     event Withdrawn(address indexed account, uint256 amount);
+    event RefundClaimed(uint256 indexed disputeId, address indexed app, uint256 amount);
     /// @notice Evidence pointer for a dispute. Event-only: the core stores NOTHING;
     ///         the log IS the evidence record (an app/indexer reconstructs it).
     event EvidenceSubmitted(uint256 indexed disputeId, address indexed submitter, string cid);
@@ -548,6 +558,29 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
         return _disputes[disputeId].evidenceGroupId;
     }
 
+    /// @inheritdoc IArbitrator
+    /// @dev Paid straight to the app rather than parked: the app is the only address this can go
+    ///      to, and pushing here cannot brick anything — a reverting app fails only this call,
+    ///      never settlement, which already finished. An app that swept the lump with withdraw()
+    ///      first has nothing left to tag, and is told so rather than underflowing.
+    function claimRefund(uint256 disputeId) external noReentrant returns (uint256 amount) {
+        Dispute storage d = _disputes[disputeId];
+        if (d.state != DisputeState.Resolved) revert WrongState();
+        amount = refundOf[disputeId];
+        if (amount == 0 || refundClaimed[disputeId] || withdrawable[d.app] < amount) {
+            revert NothingToWithdraw();
+        }
+        refundClaimed[disputeId] = true;
+        withdrawable[d.app] -= amount;
+        _pay(d.app, amount);
+        emit RefundClaimed(disputeId, d.app, amount);
+    }
+
+    /// @inheritdoc IArbitrator
+    function panelSize() external view returns (uint32) {
+        return config.panelSize;
+    }
+
     /// @notice Whether this dispute ended because the panel could not reach the evidence.
     function isVoided(uint256 disputeId) external view returns (bool) {
         return _disputes[disputeId].voided;
@@ -781,6 +814,7 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
             // Undersubscribed: return seated stakes, refund the app, refuse to rule.
             _returnSeatedStakes(disputeId);
             withdrawable[d.app] += d.feePot;
+            refundOf[disputeId] = d.feePot;
             _resolve(disputeId, d, 0, false);
             return;
         }
@@ -832,11 +866,11 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
             }
         }
 
-        uint256 panelSize = config.panelSize;
+        uint256 primaries = config.panelSize;
         uint32 seated = 0;
 
         // Pass 1: primaries. Committed -> SEATED; uncommitted -> SILENT (still slashed).
-        for (uint256 r = 0; r < n && r < panelSize; r++) {
+        for (uint256 r = 0; r < n && r < primaries; r++) {
             SeatEntry storage s = seats[idx[r]];
             if (_jurorRound[disputeId][s.juror].committed) {
                 s.role = ROLE_SEATED;
@@ -848,7 +882,7 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
         }
 
         // Pass 2: promote lowest-ranked committed alternates until the panel is full.
-        for (uint256 r = panelSize; r < n && seated < panelSize; r++) {
+        for (uint256 r = primaries; r < n && seated < primaries; r++) {
             SeatEntry storage s = seats[idx[r]];
             if (_jurorRound[disputeId][s.juror].committed) {
                 s.role = ROLE_SEATED;
@@ -987,13 +1021,16 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
             }
             uint256 jurorFeesPaid = rewardedSeats * config.jurorFee;
             // Residue of the prepay (forfeited fees) refunds to the app.
-            withdrawable[d.app] += appCut + (cost - appCut - protocolCut - pinCut - jurorFeesPaid);
+            uint256 appRefund = appCut + (cost - appCut - protocolCut - pinCut - jurorFeesPaid);
+            withdrawable[d.app] += appRefund;
+            refundOf[disputeId] = appRefund;
             withdrawable[config.treasury] += protocolCut + treasuryCut + dust;
         } else {
             // NOBODY revealed (so nobody earned a fee — note this is no longer the
             // tie/quorum-failure case, which pays its revealers above): refund the
             // prepay less the protocol take to the app, slashed pot to treasury.
             withdrawable[d.app] += cost - protocolCut - pinCut;
+            refundOf[disputeId] = cost - protocolCut - pinCut;
             withdrawable[config.treasury] += protocolCut + pot;
         }
     }

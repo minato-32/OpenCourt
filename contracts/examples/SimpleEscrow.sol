@@ -38,6 +38,7 @@ contract SimpleEscrow is IArbitrable, IEvidence {
     uint256 public escrowCount;
     mapping(uint256 => Escrow) public escrows;
     mapping(uint256 => uint256) public disputeToEscrow; // arbitrator disputeId => escrowId
+    mapping(uint256 => uint256) public escrowToDispute; // escrowId => arbitrator disputeId
     mapping(uint256 => address) public feePayer; // escrowId => who prepaid the arbitration cost
 
     /// @notice Pull-payment balances: winners, released payees, and reclaimed fees.
@@ -115,6 +116,7 @@ contract SimpleEscrow is IArbitrable, IEvidence {
         parties[1] = e.payee;
         disputeId = arbitrator.createDispute{value: msg.value}(2, abi.encode(parties));
         disputeToEscrow[disputeId] = escrowId;
+        escrowToDispute[escrowId] = disputeId;
         // Log the join before anything else can read it: dispute id -> the agreement, and -> the
         // group every filing about this escrow lands in.
         IEvidenceGroups(address(arbitrator)).linkEvidenceGroup(disputeId, escrowId);
@@ -162,18 +164,22 @@ contract SimpleEscrow is IArbitrable, IEvidence {
         emit Withdrawn(msg.sender, amount);
     }
 
-    /// @notice Reclaim the arbitration-fee refund the core credited to THIS app's
-    ///         pull-balance and forward it to the original fee-payer.
-    /// @dev The core refunds unspent arbitration fees (app take + forfeited juror
-    ///      fees) to `withdrawable[address(this)]`. Because the core is pull-based
-    ///      the escrow must actively pull them out; otherwise they are stranded here
-    ///      forever. Pulls the core balance, measures the delta received, and credits
-    ///      it to the escrow's fee-payer to withdraw().
+    /// @notice Reclaim the arbitration-fee refund the core left for ONE escrow's dispute and
+    ///         forward it to the party who prepaid that dispute.
+    /// @dev The core refunds unspent arbitration fees (app take + forfeited juror fees) and,
+    ///      being pull-based, holds them until the escrow asks. It asks PER DISPUTE.
+    ///
+    ///      It used to call the generic withdraw(), which returns everything credited to this
+    ///      escrow across every dispute it has ever raised, and then handed that whole lump to one
+    ///      escrow's fee-payer. With two disputes outstanding the first caller walked off with the
+    ///      other's refund. claimRefund(disputeId) pays exactly this dispute's share.
     function claimFees(uint256 escrowId) external noReentrant {
         address payer = feePayer[escrowId];
         if (payer == address(0)) revert NoFeePayer();
+        uint256 disputeId = escrowToDispute[escrowId];
+        if (disputeId == 0) revert NoFeePayer();
         uint256 before = address(this).balance;
-        arbitrator.withdraw(); // reverts if nothing is credited to this app
+        arbitrator.claimRefund(disputeId); // reverts if this dispute left nothing
         uint256 received = address(this).balance - before;
         if (received > 0) {
             pendingWithdrawals[payer] += received;

@@ -28,6 +28,15 @@ interface IArbitrator {
     /// @notice Raw lifecycle state of a dispute (see DisputeState).
     function disputeState(uint256 disputeId) external view returns (uint8 state);
 
+    /// @notice Target panel size for a round in this arbitrator. Used to check that an appeal
+    ///         ladder actually escalates (FR-AP-01).
+    function panelSize() external view returns (uint32);
+
+    /// @notice Pull exactly what settlement left the app for ONE dispute, paid to that dispute's
+    ///         app. Unlike withdraw(), which hands over an unattributable lump, this is tagged —
+    ///         an app holding several disputes can credit each refund to the right case.
+    function claimRefund(uint256 disputeId) external returns (uint256 amount);
+
     /// @notice Pull a caller's credited balance (juror payouts, app fee refunds, and
     ///         any arbitration-fee residue the core credits back to the app). Payouts
     ///         are pull-only so a reverting recipient can never brick settlement.
