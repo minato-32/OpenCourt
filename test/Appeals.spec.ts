@@ -71,7 +71,7 @@ describe('AppealCoordinator — multi-round appeal', () => {
     await courtB.waitForDeployment();
 
     const Coord = await ethers.getContractFactory('AppealCoordinator');
-    const coord: any = await Coord.deploy([await courtA.getAddress(), await courtB.getAddress()], 100n);
+    const coord: any = await Coord.deploy([await courtA.getAddress(), await courtB.getAddress()], 100n, 2);
     await coord.waitForDeployment();
 
     const Escrow = await ethers.getContractFactory('SimpleEscrow');
@@ -100,10 +100,15 @@ describe('AppealCoordinator — multi-round appeal', () => {
     expect(await escrow.pendingWithdrawals(payer.address)).to.equal(0n);
     expect(await escrow.pendingWithdrawals(payee.address)).to.equal(0n);
 
-    // Appeal to court B (panel 7).
+    // Appeal to court B (panel 7). FR-AP-02: BOTH positions must be paid for, or the funded one
+    // simply wins and there is no second round at all.
     const costA = await coord.appealCost(coordId);
     expect(costA).to.equal(70n); // court B: 7 * 10
-    await (await coord.connect(payee).appeal(coordId, { value: costA })).wait();
+    await (await coord.connect(payee).fundAppeal(coordId, 1, { value: costA })).wait();
+    await (await coord.connect(payer).fundAppeal(coordId, 2, { value: costA })).wait();
+    expect(await coord.disputeState(coordId)).to.equal(2); // still Appealable until the crank
+    await mine(101);
+    await (await coord.finalizeAppeal(coordId)).wait();
     expect(await coord.disputeState(coordId)).to.equal(1); // Pending (round 1 running)
 
     // Round 1 in court B: rule RELEASE (1). Highest court -> finalizes to the escrow.
@@ -135,7 +140,7 @@ describe('AppealCoordinator — multi-round appeal', () => {
     const courtB: any = await Core.deploy(courtCfg(treasury.address, 7n), await elig.getAddress(), 0n);
     await courtB.waitForDeployment();
     const Coord = await ethers.getContractFactory('AppealCoordinator');
-    const coord: any = await Coord.deploy([await courtA.getAddress(), await courtB.getAddress()], 100n);
+    const coord: any = await Coord.deploy([await courtA.getAddress(), await courtB.getAddress()], 100n, 2);
     await coord.waitForDeployment();
     const Escrow = await ethers.getContractFactory('SimpleEscrow');
     const escrow: any = await Escrow.deploy(await coord.getAddress());
