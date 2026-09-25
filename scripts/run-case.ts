@@ -178,10 +178,14 @@ async function main() {
   const jurors = [issuer, account('//j1'), account('//j2')];
   const payee = account('//payee');
 
-  const cfg = await read(CORE, coreAbi, 'config');
-  const minStake = cfg[0] as bigint;
-  const drawWindow = cfg[5] as bigint;
-  console.log('court', CORE, '· minStake', Number(minStake) / 1e18, 'PAS · panel', String(cfg[8]));
+  // Read the struct BY NAME. Positional indices silently pointed at the wrong fields every time
+  // CourtConfig gained one — drawWindowBlocks became activationDelayBlocks, panelSize became
+  // commitBlocks — and the runner then cranked closeDrawing far too early.
+  const cfg: any = (await read(CORE, coreAbi, 'config')) as any;
+  const minStake = cfg.minStake as bigint;
+  const drawWindow = cfg.drawWindowBlocks as bigint;
+  const panelSize = Number(cfg.panelSize);
+  console.log('court', CORE, '· minStake', Number(minStake) / 1e18, 'PAS · panel', panelSize);
 
   console.log('\n1. Jurors');
   for (const j of jurors) {
@@ -263,7 +267,7 @@ async function main() {
 
     if (state === 2) {
       const drawBlock = BigInt(d.drawBlock);
-      if (Number(d.seatCount) < Number(cfg[8])) {
+      if (Number(d.seatCount) < panelSize) {
         await waitFor(drawBlock + 1n, 'draw opens');
         for (const j of jurors) {
           const round: any = (await read(CORE, coreAbi, 'jurorRoundOf', [id, j.h160]))[0];

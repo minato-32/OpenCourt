@@ -145,6 +145,25 @@
         "internalType": "uint32",
         "name": "round",
         "type": "uint32"
+      }
+    ],
+    "name": "AppealCourtRefused",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "coordId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint32",
+        "name": "round",
+        "type": "uint32"
       },
       {
         "indexed": false,
@@ -690,12 +709,12 @@
         "type": "uint256"
       }
     ],
-    "name": "coordRefund",
+    "name": "coordExtraData",
     "outputs": [
       {
-        "internalType": "uint256",
+        "internalType": "bytes",
         "name": "",
-        "type": "uint256"
+        "type": "bytes"
       }
     ],
     "stateMutability": "view",
@@ -709,12 +728,12 @@
         "type": "uint256"
       }
     ],
-    "name": "coordRefundClaimed",
+    "name": "coordRefund",
     "outputs": [
       {
-        "internalType": "bool",
+        "internalType": "uint256",
         "name": "",
-        "type": "bool"
+        "type": "uint256"
       }
     ],
     "stateMutability": "view",

@@ -110,6 +110,12 @@ describe('Fee refunds are tagged to the dispute that earned them', () => {
     await (await core.finalize(1n)).wait();
 
     await (await app.claimFees()).wait(); // the old lump-sum path
-    await expect(core.claimRefund(1n)).to.be.revertedWithCustomError(core, 'NothingToWithdraw');
+    const iface = new ethers.Interface(['function claimRefund(uint256)']);
+    await expect(app.forward(await core.getAddress(), iface.encodeFunctionData('claimRefund', [1n])))
+      .to.be.revertedWithCustomError(core, 'NothingToWithdraw');
+
+    // And only the app may ask: an open call would push value into a pull-payment app that has no
+    // hook to credit it to anyone.
+    await expect(core.connect(alice).claimRefund(1n)).to.be.revertedWithCustomError(core, 'OnlyApp');
   });
 });

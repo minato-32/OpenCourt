@@ -355,8 +355,17 @@ async function main() {
   await write(deployer.signer, escrowAddr, escrowAbi, 'dispute', [escrowId], toPlanck(cost));
   const disputeId = (await read(core, coreAbi, 'disputeCount'))[0] as bigint;
   const d0: any = (await read(core, coreAbi, 'getDispute', [disputeId]))[0];
-  const drawBlock = BigInt(d0.drawBlock);
-  console.log(`   escrowId ${escrowId} -> disputeId ${disputeId}, drawBlock ${drawBlock}\n`);
+  console.log(`   escrowId ${escrowId} -> disputeId ${disputeId}, record open until block ${d0.evidenceDeadline}`);
+
+  // ------------------------------------------------- 3b. close the record (FR-DL-02)
+  // A dispute now opens in Evidence with no drawBlock at all; the draw block is only set when
+  // the record is frozen, so the sortition seed anchors to a block nobody could see while the
+  // parties were still filing. Skipping this leaves claimSeat reverting WrongState.
+  await waitUntil(BigInt(d0.evidenceDeadline) + 1n, 'evidence window closes');
+  await write(deployer.signer, core, coreAbi, 'openDrawing', [disputeId]);
+  const drawn: any = (await read(core, coreAbi, 'getDispute', [disputeId]))[0];
+  const drawBlock = BigInt(drawn.drawBlock);
+  console.log(`   record frozen -> Drawing, drawBlock ${drawBlock}\n`);
 
   // ------------------------------------------------------------- 4. the draw
   console.log('4. Sortition — each juror claims the seats that self-select');
