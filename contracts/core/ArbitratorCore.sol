@@ -63,6 +63,8 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
         uint16 gammaBps; // non-reveal slash of stake (gamma >= beta)
         uint16 thetaBps; // treasury cut of the slashed pot
         uint16 quorumBps; // min revealed weight / panelSize for a valid verdict
+        bool commitRequired; // FR-VT-03: false = open voting, cheap but bandwagon-prone
+        uint32 minPoolWeightMultiple; // FR-PG-06: pool must cover this many full panels; 0 = off
         uint16 appFeeBps; // fee take credited back to the app at settlement
         uint16 protocolFeeBps; // fee take routed to the treasury at settlement
         uint16 pinFeeBps; // FR-EV-06: fee take routed to whoever pins this court's evidence
@@ -172,7 +174,11 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
     mapping(uint256 => mapping(address => uint32)) private _evidenceCount; // disputeId => submitter => count
     mapping(uint256 => mapping(address => bool)) private _excluded; // disputeId => barred from the panel
 
+    /// @notice Every juror's unlocked stake, and its running total.
+    /// @dev `poolStake` mirrors the sum of `staked` exactly — updated at each of the four places
+    ///      that move it — so readiness is an O(1) read rather than a walk over the pool.
     mapping(address => uint256) public staked; // free stake
+    uint256 public poolStake;
     mapping(address => uint64) public activeAt; // block from which stake is eligible
     mapping(address => uint256) public withdrawable; // pull-payment balance
 
@@ -265,6 +271,7 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
     error BondRequired(uint256 required);
     error BondNotReclaimable();
     error OnlyApp();
+    error CourtNotReady(uint256 have, uint256 need);
     error AlreadyReported();
 
     constructor(CourtConfig memory cfg, address eligibilityPolicy, uint96 id) {
@@ -353,15 +360,34 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
         if (msg.value == 0) revert InsufficientStake();
         activeAt[msg.sender] = uint64(block.number) + config.activationDelayBlocks;
         staked[msg.sender] += msg.value;
+        poolStake += msg.value;
         emit Staked(msg.sender, msg.value, activeAt[msg.sender]);
     }
 
     function unstake(uint256 amount) external noReentrant {
         if (amount > staked[msg.sender]) revert InsufficientStake();
         staked[msg.sender] -= amount;
+        poolStake -= amount;
         if (staked[msg.sender] == 0) activeAt[msg.sender] = 0; // re-delay on next stake
         _pay(msg.sender, amount);
         emit Unstaked(msg.sender, amount);
+    }
+
+    /// @notice Free stake this court needs before it will accept a dispute (FR-PG-06).
+    /// @dev Zero when the court sets no floor.
+    function readinessThreshold() public view returns (uint256) {
+        return uint256(config.minPoolWeightMultiple) * config.panelSize * config.minStake;
+    }
+
+    /// @notice Whether the pool can plausibly fill a panel, and by how much it is short.
+    /// @dev Measured on free stake, not on stake that has cleared its activation delay — that
+    ///      would need a walk over every juror. So this is an upper bound on what can be drawn:
+    ///      it catches an empty court, which is the failure it exists for, and does not pretend
+    ///      to promise that every staked slot is already eligible.
+    function courtReadiness() public view returns (bool ready, uint256 have, uint256 need) {
+        need = readinessThreshold();
+        have = poolStake;
+        ready = have >= need;
     }
 
     /// @notice Slots a juror has staked for, before the eligibility policy has its say.
@@ -514,6 +540,11 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
         // (_deliver additionally uses a low-level call so an app self-destructed AFTER
         // creation still cannot brick settlement.)
         if (msg.sender.code.length == 0) revert AppNotContract();
+        // FR-PG-06: refuse loudly now rather than let the dispute stall in Drawing with nobody to
+        // draw. A party who is told the court is empty can go elsewhere; one whose case is frozen
+        // for a week cannot.
+        (bool ready, uint256 have, uint256 need) = courtReadiness();
+        if (!ready) revert CourtNotReady(have, need);
         uint256 cost = arbCost;
         if (msg.value != cost) revert WrongFee(cost);
 
@@ -667,6 +698,7 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
     /// @dev Lock one slot of stake and record the seat.
     function _admit(uint256 disputeId, Dispute storage d, address juror, uint16 slot, uint256 vrf) private {
         staked[juror] -= config.minStake;
+        poolStake -= config.minStake;
         _slotClaimed[disputeId][juror][slot] = true;
         _seatsOf[disputeId].push(
             SeatEntry({
@@ -703,6 +735,7 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
         SeatEntry memory gone = seats[idx];
 
         staked[gone.juror] += gone.slotStake;
+        poolStake += gone.slotStake;
         _slotClaimed[disputeId][gone.juror][gone.slot] = false;
         _jurorRound[disputeId][gone.juror].seatCount -= 1;
         d.seatCount -= 1;
@@ -732,6 +765,9 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
     ///         Clients MUST use a fresh salt per dispute.
     function commitVote(uint256 disputeId, bytes32 commitment) external {
         Dispute storage d = _disputes[disputeId];
+        // An open-voting court has nothing to commit to; letting a commit through would seat a
+        // panel by a rule the reveal step no longer checks.
+        if (!config.commitRequired) revert WrongState();
         if (d.state != DisputeState.Committing) revert WrongState();
         if (block.number > d.commitDeadline) revert DrawClosed();
         JurorRound storage jr = _jurorRound[disputeId][msg.sender];
@@ -762,20 +798,43 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
     /// @notice Reveal a committed vote. Adds the juror's SEATED-seat weight to the
     ///         tally in one shot (k-slot weighting).
     function revealVote(uint256 disputeId, uint8 choice, bytes32 salt) external {
+        _reveal(disputeId, msg.sender, choice, salt);
+    }
+
+    /// @notice Reveal on a juror's behalf (FR-VT-04). Anyone may call it.
+    /// @dev A juror who loses the browser that holds their salt is otherwise slashed for an
+    ///      accident, which is the single most expensive support case this protocol has. The
+    ///      commitment binds the juror's own address, so a relayer cannot put words in their
+    ///      mouth: only the (choice, salt) pair that juror actually committed will verify.
+    ///
+    ///      The cost is real and is not hidden: the relayer sees the vote before the reveal is
+    ///      mined, so a juror who hands their pair to a relayer has given up secrecy for that
+    ///      window. Timelock-encrypted reveal is the proper fix and is a later phase.
+    function revealVoteFor(uint256 disputeId, address juror, uint8 choice, bytes32 salt) external {
+        _reveal(disputeId, juror, choice, salt);
+    }
+
+    function _reveal(uint256 disputeId, address juror, uint8 choice, bytes32 salt) private {
         Dispute storage d = _disputes[disputeId];
         if (d.state != DisputeState.Revealing) revert WrongState();
         if (block.number > d.revealDeadline) revert DrawClosed();
         if (choice == 0 || choice > d.choices) revert BadChoice();
-        JurorRound storage jr = _jurorRound[disputeId][msg.sender];
+        JurorRound storage jr = _jurorRound[disputeId][juror];
         if (jr.dutySeats == 0) revert NotSeated(); // not on the seated panel
         if (jr.revealed || jr.reportedUnavailable) revert BadReveal();
-        if (keccak256(abi.encodePacked(disputeId, msg.sender, choice, salt)) != jr.commitment) revert BadReveal();
+        // Open voting has no commitment to check — the vote IS the reveal, in the open, which is
+        // exactly the bandwagoning the court opted into. Only the juror may cast it.
+        if (config.commitRequired) {
+            if (keccak256(abi.encodePacked(disputeId, juror, choice, salt)) != jr.commitment) revert BadReveal();
+        } else if (msg.sender != juror) {
+            revert BadReveal();
+        }
 
         jr.revealed = true;
         jr.choice = choice;
         _votes[disputeId][choice] += jr.dutySeats;
         d.revealedCount += jr.dutySeats;
-        emit VoteRevealed(disputeId, msg.sender, choice, jr.dutySeats);
+        emit VoteRevealed(disputeId, juror, choice, jr.dutySeats);
     }
 
     /// @notice Report that this dispute's evidence cannot be retrieved, instead of voting.
@@ -869,10 +928,15 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
         uint256 primaries = config.panelSize;
         uint32 seated = 0;
 
+        // With open voting there is no commitment to sort on, so the panel is the top-ranked
+        // seats outright and alternates are never promoted — nothing has happened yet that could
+        // tell a primary apart from an absentee.
+        bool gated = config.commitRequired;
+
         // Pass 1: primaries. Committed -> SEATED; uncommitted -> SILENT (still slashed).
         for (uint256 r = 0; r < n && r < primaries; r++) {
             SeatEntry storage s = seats[idx[r]];
-            if (_jurorRound[disputeId][s.juror].committed) {
+            if (!gated || _jurorRound[disputeId][s.juror].committed) {
                 s.role = ROLE_SEATED;
                 _jurorRound[disputeId][s.juror].dutySeats += 1;
                 seated += 1;
@@ -882,7 +946,7 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
         }
 
         // Pass 2: promote lowest-ranked committed alternates until the panel is full.
-        for (uint256 r = primaries; r < n && seated < primaries; r++) {
+        for (uint256 r = primaries; gated && r < n && seated < primaries; r++) {
             SeatEntry storage s = seats[idx[r]];
             if (_jurorRound[disputeId][s.juror].committed) {
                 s.role = ROLE_SEATED;
