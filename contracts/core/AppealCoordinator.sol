@@ -145,6 +145,7 @@ contract AppealCoordinator is IArbitrator, IArbitrable, IEvidenceGroups {
     error BadCourtLadder();
     error BadRoundCap();
     error NothingFunded();
+    error ClosedPoolNeedsNeutralParent();
     error TransferFailed();
 
     /// @param maxRounds_ hard cap on rounds, 1..courts.length. A ladder can be longer than the
@@ -161,6 +162,15 @@ contract AppealCoordinator is IArbitrator, IArbitrable, IEvidenceGroups {
             courts.push(_courts[i]);
         }
         if (maxRounds_ == 0 || maxRounds_ > _courts.length) revert BadRoundCap();
+
+        // FR-PG-01 — the highest-value guardrail on a closed pool: packing a panel is pointless
+        // if the result can be overturned by a pool the app does not control. So a court whose
+        // jurors the app chooses may never be the last word: every reachable round after it must
+        // exist, and the final one must be open to anyone.
+        //
+        // Checked against the rounds this coordinator will actually run, not the whole array —
+        // a ladder capped below its length leaves the later courts unreachable.
+        if (_courts[maxRounds_ - 1].poolIsClosed()) revert ClosedPoolNeedsNeutralParent();
         appealWindowBlocks = _appealWindowBlocks;
         maxRounds = maxRounds_;
     }
@@ -538,6 +548,13 @@ contract AppealCoordinator is IArbitrator, IArbitrable, IEvidenceGroups {
         coordRefund[coordId] = 0;
         _pay(cd.app, amount);
         emit RefundClaimed(coordId, cd.app, amount);
+    }
+
+    /// @inheritdoc IArbitrator
+    /// @dev The first round's pool — what an app is quoted before any appeal exists. The ladder
+    ///      guarantees a closed first round is appealable to an open one.
+    function poolIsClosed() external view returns (bool) {
+        return courts[0].poolIsClosed();
     }
 
     /// @inheritdoc IArbitrator
