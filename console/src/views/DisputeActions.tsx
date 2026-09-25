@@ -16,6 +16,9 @@ import type { WalletAccount } from '../lib/wallet';
 
 type Tx = { state: 'idle' | 'signing' | 'done' | 'error'; msg?: string };
 
+/** An open-ballot court has no commitment, so the contract ignores the salt entirely. */
+const ZERO_SALT = `0x${'0'.repeat(64)}`;
+
 export function DisputeActions({
   court,
   cfg,
@@ -137,7 +140,49 @@ export function DisputeActions({
           </>
         )}
 
-        {dispute.state === DisputeState.Committing && (
+        {dispute.state === DisputeState.Committing && !cfg.commitRequired && (
+          <>
+            <span className="muted">
+              This court votes in the open — there is nothing to commit to. Wait for the reveal
+              window, then cast your vote there.
+            </span>
+            <button
+              className="btn ghost"
+              disabled={tx.state === 'signing' || windowOpen}
+              onClick={() => run('Open reveal', 'openReveal', [dispute.id])}
+            >
+              Open voting
+            </button>
+          </>
+        )}
+
+        {dispute.state === DisputeState.Revealing && !cfg.commitRequired && mySeats > 0 && (
+          <>
+            <label className="field">
+              <span>your vote</span>
+              <select className="select" value={choice} onChange={(e) => setChoice(Number(e.target.value))}>
+                {Array.from({ length: dispute.choices }, (_, i) => i + 1).map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              className="btn"
+              disabled={tx.state === 'signing' || round?.revealed}
+              onClick={() => run(`Vote ${choice}`, 'revealVote', [dispute.id, choice, ZERO_SALT])}
+            >
+              Cast vote
+            </button>
+            <span className="muted">
+              Open ballot: your vote is visible the moment it lands, and everyone still voting can
+              see it.
+            </span>
+          </>
+        )}
+
+        {dispute.state === DisputeState.Committing && cfg.commitRequired && (
           <>
             <label className="field">
               <span>choice</span>
@@ -166,7 +211,7 @@ export function DisputeActions({
           </>
         )}
 
-        {dispute.state === DisputeState.Revealing && (
+        {dispute.state === DisputeState.Revealing && cfg.commitRequired && (
           <>
             <label className="field">
               <span>salt passphrase</span>
@@ -243,7 +288,7 @@ export function DisputeActions({
         )}
       </div>
 
-      {dispute.state === DisputeState.Committing && saved && (
+      {dispute.state === DisputeState.Committing && cfg.commitRequired && saved && (
         <div className="hints">
           <span className="muted">
             a salt for this dispute is already stored in this browser (choice {saved.choice}) — committing again
@@ -252,7 +297,7 @@ export function DisputeActions({
         </div>
       )}
 
-      {dispute.state === DisputeState.Revealing && round?.committed && !round.revealed && !saved && (
+      {dispute.state === DisputeState.Revealing && cfg.commitRequired && round?.committed && !round.revealed && !saved && (
         <div className="banner warn">
           You committed but this browser has no stored salt for this dispute. Without it the reveal cannot be
           reconstructed and the seat is slashed at γ. Import a backup if you have one.

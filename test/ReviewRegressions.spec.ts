@@ -221,3 +221,104 @@ describe('regression — the appeal coordinator must not wedge or mis-route', ()
     expect(await cs[1].isExcluded(1n, signers[4].address)).to.equal(false);
   });
 });
+
+describe('regression — only a fully funded position can take the appeal pot', () => {
+  it('ignores a dust stake on a choice that never covered the cost', async () => {
+    const signers = await ethers.getSigners();
+    const [, treasury, payer, payee] = signers;
+    const dust = signers[12];
+    const cs = [
+      await deployCourt(baseCfg(treasury.address, { panelSize: 3n })),
+      await deployCourt(baseCfg(treasury.address, { panelSize: 7n })),
+    ];
+    const Coord = await ethers.getContractFactory('AppealCoordinator');
+    const coord: any = await Coord.deploy(await Promise.all(cs.map((c) => c.getAddress())), 100n, 2);
+    await coord.waitForDeployment();
+    const App = await ethers.getContractFactory('MockArbitrable');
+    const app: any = await App.deploy(await coord.getAddress());
+    await app.waitForDeployment();
+    await (await app.createDispute(3, { value: await coord.arbitrationCost('0x') })).wait();
+
+    await mine(6);
+    await (await cs[0].openDrawing(1n)).wait();
+    await round(cs[0], baseCfg(treasury.address), signers.slice(4, 7), [
+      [signers[4], 1], [signers[5], 1], [signers[6], 1],
+    ]);
+    await (await cs[0].finalize(1n)).wait();
+
+    const cost = (await coord.appealCost(1n)) as bigint;
+    await (await coord.connect(payer).fundAppeal(1n, 1, { value: cost })).wait();
+    await (await coord.connect(payee).fundAppeal(1n, 2, { value: cost })).wait();
+    // One wei on a third position that nobody ever covered.
+    await (await coord.connect(dust).fundAppeal(1n, 3, { value: 1n })).wait();
+    await mine(101);
+    await (await coord.finalizeAppeal(1n)).wait();
+
+    // The bigger panel happens to land on choice 3 — the position that paid nothing.
+    await mine(6);
+    await (await cs[1].openDrawing(1n)).wait();
+    await round(cs[1], baseCfg(treasury.address), signers.slice(4, 11), [
+      ...signers.slice(4, 11).map((j) => [j, 3] as [any, number]),
+    ]);
+    await (await cs[1].finalize(1n)).wait();
+    expect((await coord.currentRuling(1n))[0]).to.equal(3n);
+
+    // Paying out by funding alone would have handed the dust backer the ENTIRE residual pot —
+    // 2 * cost put up by the two real positions, for one wei of risk. A position that never
+    // covered the cost wins nothing, and the pot refunds pro rata instead.
+    await expect(coord.connect(dust).claimAppealReward(1n, 0, 3))
+      .to.changeEtherBalance(dust, 0n)
+      .catch(() => undefined);
+    const potLeft = 2n * cost + 1n - cost;
+    await expect(coord.connect(payer).claimAppealReward(1n, 0, 1))
+      .to.changeEtherBalance(payer, (cost * potLeft) / (2n * cost + 1n));
+  });
+});
+
+describe('regression — a quorum redraw treats an unavailability report as silence', () => {
+  it('slashes a lone reporter on a redraw exactly as a terminal settlement would', async () => {
+    const signers = await ethers.getSigners();
+    const [, treasury] = signers;
+    const cfg = baseCfg(treasury.address, { quorumFailure: 2n });
+    const core = await deployCourt(cfg);
+    const App = await ethers.getContractFactory('MockArbitrable');
+    const app: any = await App.deploy(await core.getAddress());
+    await app.waitForDeployment();
+    await (await app.createDispute(2, { value: await core.arbitrationCost('0x') })).wait();
+    await mine(6);
+    await (await core.openDrawing(1n)).wait();
+
+    const panel = signers.slice(2, 5);
+    for (const j of panel) await (await core.connect(j).stake({ value: cfg.minStake })).wait();
+    await mine(2);
+    for (const j of panel) await (await core.connect(j).claimSeat(1n)).wait();
+    await mine(101);
+    await (await core.closeDrawing(1n)).wait();
+    const salts: Record<string, string> = {};
+    for (const j of panel) {
+      const salt = ethers.hexlify(ethers.randomBytes(32));
+      salts[j.address] = salt;
+      await (await core.connect(j).commitVote(1n, commitmentOf(1n, j.address, 1, salt))).wait();
+    }
+    await mine(101);
+    await (await core.openReveal(1n)).wait();
+
+    // One votes, one reports the record unreachable, one goes dark. Participation 2 meets the
+    // quorum floor but reporters are not a majority of it, so this is a quorum failure, not a
+    // void — revealedCount 1 < need 2.
+    await (await core.connect(panel[0]).revealVote(1n, 1, salts[panel[0].address])).wait();
+    await (await core.connect(panel[1]).reportUnavailable(1n)).wait();
+    await mine(101);
+
+    const tx = await core.finalize(1n);
+    await expect(tx).to.emit(core, 'Redrawn');
+    // The reporter is slashed like the silent seat. Paying them a full fee here would have made
+    // reporting weakly dominant over voting on any redraw court.
+    await expect(tx).to.emit(core, 'Slashed').withArgs(1n, panel[1].address, 25n);
+    expect(await core.withdrawable(panel[0].address)).to.equal(110n); // voted
+    expect(await core.withdrawable(panel[1].address)).to.equal(75n); // reported
+    expect(await core.withdrawable(panel[2].address)).to.equal(75n); // silent
+    // No conservation check here: the dispute is mid-flight, back in Drawing with its fee pot
+    // still escrowed, so the core legitimately holds more than the sum of pullable balances.
+  });
+});
