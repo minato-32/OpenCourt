@@ -500,3 +500,71 @@ describe('regression — an evidence bond must fit the record it is stored in', 
       .to.be.revertedWithCustomError(reg, 'BadConfig').withArgs('evidenceBond');
   });
 });
+
+describe('regression — a win by default refunds everyone, it does not pay the winner', () => {
+  it('returns a half-funded backer their stake instead of handing it to the sole funder', async () => {
+    const signers = await ethers.getSigners();
+    const [, treasury, payer, payee] = signers;
+    const cs = [
+      await deployCourt(baseCfg(treasury.address, { panelSize: 3n })),
+      await deployCourt(baseCfg(treasury.address, { panelSize: 7n })),
+    ];
+    const Coord = await ethers.getContractFactory('AppealCoordinator');
+    const coord: any = await Coord.deploy(await Promise.all(cs.map((c) => c.getAddress())), 100n, 2);
+    await coord.waitForDeployment();
+    const App = await ethers.getContractFactory('MockArbitrable');
+    const app: any = await App.deploy(await coord.getAddress());
+    await app.waitForDeployment();
+    await (await app.createDispute(2, { value: await coord.arbitrationCost('0x') })).wait();
+
+    await mine(6);
+    await (await cs[0].openDrawing(1n)).wait();
+    await round(cs[0], baseCfg(treasury.address), signers.slice(4, 7), [
+      [signers[4], 2], [signers[5], 2], [signers[6], 2],
+    ]);
+    await (await cs[0].finalize(1n)).wait();
+
+    const cost = (await coord.appealCost(1n)) as bigint; // 70
+    await (await coord.connect(payee).fundAppeal(1n, 1, { value: cost })).wait();
+    // One short of covering their position, and the window shuts.
+    await (await coord.connect(payer).fundAppeal(1n, 2, { value: cost - 1n })).wait();
+    await mine(101);
+    await expect(coord.finalizeAppeal(1n)).to.emit(coord, 'WonByDefault').withArgs(1n, 0, 1);
+    expect((await coord.currentRuling(1n))[0]).to.equal(1n);
+
+    // No panel ever sat, so there is nothing anyone won and nothing to pay for. Folding the
+    // partial backer's stake into the winner's share let a party profit purely by out-waiting a
+    // half-funded opponent: the payee would have taken 139 and the payer's 69 would be lost.
+    await expect(coord.connect(payee).claimAppealReward(1n, 0, 1)).to.changeEtherBalance(payee, cost);
+    await expect(coord.connect(payer).claimAppealReward(1n, 0, 2)).to.changeEtherBalance(payer, cost - 1n);
+  });
+});
+
+describe('regression — the pinner is paid even when no panel sat', () => {
+  it('takes the pinning cut out of an undersubscribed draw\'s refund', async () => {
+    const signers = await ethers.getSigners();
+    const [, treasury, , , , , , , , pinner] = signers;
+    const cfg = baseCfg(treasury.address, { pinFeeBps: 500n, pinner: pinner.address });
+    const core = await deployCourt(cfg);
+    const App = await ethers.getContractFactory('MockArbitrable');
+    const app: any = await App.deploy(await core.getAddress());
+    await app.waitForDeployment();
+    const cost = (await core.arbitrationCost('0x')) as bigint;
+    await (await app.createDispute(2, { value: cost })).wait();
+
+    await mine(6);
+    await (await core.openDrawing(1n)).wait();
+    await mine(160);
+    await (await core.finalize(1n)).wait();
+
+    // The record was hosted through the whole evidence phase; only the panel failed to appear.
+    const pinShare = (cost * 500n) / 10000n;
+    expect(pinShare).to.be.gt(0n);
+    expect(await core.withdrawable(pinner.address)).to.equal(pinShare);
+    expect(await core.withdrawable(await app.getAddress())).to.equal(cost - pinShare);
+    expect(await core.refundOf(1n)).to.equal(cost - pinShare);
+    await assertConservation(core, [
+      await app.getAddress(), treasury.address, pinner.address,
+    ]);
+  });
+});

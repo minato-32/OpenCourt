@@ -917,8 +917,14 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
             if (d.seatCount >= config.panelSize) revert WrongState();
             // Undersubscribed: return seated stakes, refund the app, refuse to rule.
             _returnSeatedStakes(disputeId);
-            withdrawable[d.app] += d.feePot;
-            refundOf[disputeId] = d.feePot;
+            // The pinner is owed here too. It hosted the record through the whole evidence phase,
+            // which did happen — only the panel did not. Refunding the app in full contradicted
+            // the rule _settle states plainly: the pinning take is paid whatever the outcome.
+            uint256 pinShare = (d.feePot * config.pinFeeBps) / BPS;
+            if (pinShare > 0) withdrawable[config.pinner] += pinShare;
+            uint256 appShare = d.feePot - pinShare;
+            withdrawable[d.app] += appShare;
+            refundOf[disputeId] = appShare;
             _resolve(disputeId, d, 0, false);
             return;
         }
