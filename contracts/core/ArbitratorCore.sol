@@ -220,7 +220,11 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
     // ------------------------------------------------------------------ events
     event Staked(address indexed juror, uint256 amount, uint64 activeAt);
     event Unstaked(address indexed juror, uint256 amount);
-    event DisputeCreated(uint256 indexed disputeId, address indexed app, uint8 choices, uint64 drawBlock);
+    /// @param phaseDeadline the block the dispute's FIRST phase ends — the evidence deadline.
+    ///        It is not the draw block: since FR-DL-02 that is unset at creation and only assigned
+    ///        by openDrawing, so an indexer scheduling claimSeat off this field would aim at the
+    ///        wrong height entirely.
+    event DisputeCreated(uint256 indexed disputeId, address indexed app, uint8 choices, uint64 phaseDeadline);
     event PartyExcluded(uint256 indexed disputeId, address indexed party);
     event SeatGranted(uint256 indexed disputeId, address indexed juror, uint32 seatCount);
     event SeatClaimed(uint256 indexed disputeId, address indexed juror, uint16 slot, uint256 vrfOutput);
@@ -954,7 +958,7 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
             SeatEntry storage look = seats[i];
             if (look.settled || look.role == ROLE_RELEASED) continue;
             JurorRound storage lr = _jurorRound[disputeId][look.juror];
-            if (lr.revealed || lr.reportedUnavailable) owed += config.jurorFee;
+            if (lr.revealed) owed += config.jurorFee;
             else pot += (look.slotStake * config.gammaBps) / BPS;
         }
         // What the retry needs is the GROSSED-UP cost, not the bare wage bill. Settlement takes
@@ -973,10 +977,15 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
 
             if (seat.role == ROLE_RELEASED) {
                 withdrawable[seat.juror] += seat.slotStake; // never needed, never at risk
-            } else if (jr.revealed || jr.reportedUnavailable) {
-                // Showed up. Paid and released — they are not made to sit the retry.
+            } else if (jr.revealed) {
+                // Voted. Paid and released — they are not made to sit the retry.
                 withdrawable[seat.juror] += seat.slotStake + config.jurorFee;
             } else {
+                // Everyone else, INCLUDING a juror who reported the record unreachable. Reporting
+                // is only doing the work when the panel agrees and the dispute voids; this is a
+                // quorum failure, not a void, so it is treated exactly as _settle treats it — as
+                // silence. Paying it here would make reporting weakly dominant on a redraw court:
+                // free, never worse than staying quiet, sometimes a full fee for no work.
                 uint256 slash = (seat.slotStake * config.gammaBps) / BPS;
                 pot += slash;
                 withdrawable[seat.juror] += seat.slotStake - slash;
