@@ -433,7 +433,13 @@ contract AppealCoordinator is IArbitrator, IArbitrable, IEvidenceGroups {
         if (contributed == 0 || rewardClaimed[coordId][r][choice][msg.sender]) revert NothingToWithdraw();
 
         uint256 payable_ = p.total + p.extra - p.spent;
-        if (p.winningChoice == 0) {
+        if (p.spent == 0) {
+            // No round was ever bought, so there is nothing to have won. This covers the
+            // won-by-default case, where folding the losing side's money into the winner's share
+            // paid the sole funder every partial backer's stake for a panel that never sat — a
+            // party could profit purely by out-waiting a half-funded opponent. Everyone out, whole.
+            amount = contributed;
+        } else if (p.winningChoice == 0) {
             // No position prevailed: everyone shares what is left, in proportion to what they put in.
             amount = (contributed * payable_) / p.total;
         } else if (choice == p.winningChoice) {
