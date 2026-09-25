@@ -51,6 +51,8 @@ contract AppealCoordinator is IArbitrator, IArbitrable, IEvidenceGroups {
         uint64 appealDeadline;
         CoordState state;
         uint256 childId; // dispute id inside courts[round]
+        /// @dev The delivered ruling is a fallback the court supplied, not a panel's verdict.
+        bool fallbackRuling;
         uint256 evidenceGroupId; // ERC-1497 group, carried onto every appeal round
         bool groupLinked; // whether the app chose a group, or we are on the default
     }
@@ -253,13 +255,19 @@ contract AppealCoordinator is IArbitrator, IArbitrable, IEvidenceGroups {
         if (cd.state != CoordState.Pending) revert WrongState();
 
         cd.ruling = uint8(ruling);
+        // Carried up from the child: an app reading this coordinator has to be able to tell a
+        // jury's answer from a court's standing default, exactly as it could reading a court.
+        cd.fallbackRuling = IArbitrator(msg.sender).rulingIsFallback(childId);
         cd.state = CoordState.Appealable;
         cd.appealDeadline = uint64(block.number) + appealWindowBlocks;
         emit Ruling(IArbitrator(msg.sender), childId, ruling, isFinal);
         emit RoundRuled(coordId, cd.round, cd.ruling, cd.appealDeadline);
 
-        // A ruling for round r>0 decides the appeal that was funded against round r-1.
-        if (cd.round > 0) _settlePot(coordId, cd.round - 1, cd.ruling);
+        // A ruling for round r>0 decides the appeal that was funded against round r-1 — but only
+        // if a panel actually decided it. A fallback is a number the court supplied when the votes
+        // settled nothing; paying one side's backers out of the other's on it would move money on
+        // a verdict no jury reached. Pro-rata refund instead.
+        if (cd.round > 0) _settlePot(coordId, cd.round - 1, cd.fallbackRuling ? 0 : cd.ruling);
 
         // No appeals possible (window disabled or round cap reached) -> this is already final.
         if (appealWindowBlocks == 0 || uint256(cd.round) + 1 >= maxRounds) {
@@ -333,6 +341,8 @@ contract AppealCoordinator is IArbitrator, IArbitrable, IEvidenceGroups {
             uint8 winner = soleFundedChoice[coordId][r];
             cd.ruling = winner;
             cd.tied = false;
+            // Nobody argued the other side, so no panel weighed this either.
+            cd.fallbackRuling = true;
             emit WonByDefault(coordId, r, winner);
             _settlePot(coordId, r, winner);
             _finalize(coordId, cd);
@@ -528,6 +538,11 @@ contract AppealCoordinator is IArbitrator, IArbitrable, IEvidenceGroups {
         coordRefund[coordId] = 0;
         _pay(cd.app, amount);
         emit RefundClaimed(coordId, cd.app, amount);
+    }
+
+    /// @inheritdoc IArbitrator
+    function rulingIsFallback(uint256 coordId) external view returns (bool) {
+        return _disputes[coordId].fallbackRuling;
     }
 
     /// @inheritdoc IArbitrator

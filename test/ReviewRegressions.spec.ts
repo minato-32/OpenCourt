@@ -568,3 +568,56 @@ describe('regression — the pinner is paid even when no panel sat', () => {
     ]);
   });
 });
+
+describe('regression — an appeal pot never settles on a ruling no panel produced', () => {
+  it('refunds both sides pro rata when the appeal court falls back to its default', async () => {
+    const signers = await ethers.getSigners();
+    const [, treasury, alice, bob] = signers;
+    const cs = [
+      await deployCourt(baseCfg(treasury.address, { panelSize: 3n })),
+      // The appeal court answers a quorum failure with its standing default instead of refusing.
+      await deployCourt(baseCfg(treasury.address, { panelSize: 7n, quorumFailure: 1n, defaultChoice: 1n })),
+    ];
+    const Coord = await ethers.getContractFactory('AppealCoordinator');
+    const coord: any = await Coord.deploy(await Promise.all(cs.map((c) => c.getAddress())), 100n, 2);
+    await coord.waitForDeployment();
+    const App = await ethers.getContractFactory('MockArbitrable');
+    const app: any = await App.deploy(await coord.getAddress());
+    await app.waitForDeployment();
+    await (await app.createDispute(2, { value: await coord.arbitrationCost('0x') })).wait();
+
+    await mine(6);
+    await (await cs[0].openDrawing(1n)).wait();
+    await round(cs[0], baseCfg(treasury.address), signers.slice(4, 7), [
+      [signers[4], 2], [signers[5], 2], [signers[6], 2],
+    ]);
+    await (await cs[0].finalize(1n)).wait();
+
+    const cost = (await coord.appealCost(1n)) as bigint;
+    await (await coord.connect(alice).fundAppeal(1n, 1, { value: cost })).wait();
+    await (await coord.connect(bob).fundAppeal(1n, 2, { value: cost })).wait();
+    await mine(101);
+    await (await coord.finalizeAppeal(1n)).wait();
+
+    // The appeal panel is seated but misses quorum, so court B delivers its default: choice 1.
+    await mine(6);
+    await (await cs[1].openDrawing(1n)).wait();
+    const panel = signers.slice(8, 15);
+    await round(cs[1], baseCfg(treasury.address), panel, [[panel[0], 2]]);
+    await (await cs[1].finalize(1n)).wait();
+
+    expect((await coord.currentRuling(1n))[0]).to.equal(1n);
+    expect(await coord.rulingIsFallback(1n)).to.equal(true);
+
+    // Alice backed choice 1 and the delivered ruling IS 1 — but no jury reached it, and the
+    // court slashed nobody over it. Handing her Bob's stake would move money on a verdict that
+    // does not exist. Both sides split what is left pro rata instead.
+    await (await coord.reclaimFees(1n, 1)).wait();
+    const aliceBefore = await ethers.provider.getBalance(alice.address);
+    await (await coord.connect(alice).claimAppealReward(1n, 0, 1)).wait();
+    const aliceGot = (await ethers.provider.getBalance(alice.address)) - aliceBefore;
+    expect(aliceGot).to.be.lt(cost * 2n); // NOT the whole pot
+
+    await expect(coord.connect(bob).claimAppealReward(1n, 0, 2)).to.not.be.reverted;
+  });
+});

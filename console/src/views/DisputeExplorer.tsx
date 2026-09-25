@@ -108,9 +108,14 @@ export function DisputeExplorer({
               <span className="id">#{key}</span>
               <span className={`pill s${d.state}`}>{STATE_LABEL[d.state]}</span>
               <span className="verdict">
+                {/* A fallback is a non-zero ruling no panel produced. Reading `ruling` alone
+                    showed it as a verdict while the seat table below — which is fallback-aware —
+                    showed every revealer rewarded, so the header contradicted its own rows. */}
                 {d.state === DisputeState.Resolved
-                  ? d.ruling === 0
-                    ? `no verdict${reason ? ` — ${reason}` : ''}`
+                  ? d.ruling === 0 || d.fallbackRuling
+                    ? `no verdict${reason ? ` — ${reason}` : ''}${
+                        d.fallbackRuling ? ` · court default ${d.ruling}` : ''
+                      }`
                     : `ruling ${d.ruling}`
                   : deadline
                     ? `${deadline.crank} in ${blocksLeft(deadline.endsAt, head, CHAIN.blockTimeSeconds)}`
@@ -130,13 +135,14 @@ export function DisputeExplorer({
                   <Fact k="choices" v={String(d.choices)} />
                   <Fact k="ruled (delivered)" v={d.ruled ? 'yes' : 'no'} />
                   <Fact k="tied" v={d.tied ? 'yes' : 'no'} />
+                  <Fact k="ruling source" v={d.fallbackRuling ? 'court default' : 'the panel'} />
                   <Fact k="fee pot" v={pas(d.feePot)} />
                   <Fact k="draw block" v={String(d.drawBlock)} />
                   <Fact k="commit deadline" v={String(d.commitDeadline)} />
                   <Fact k="reveal deadline" v={String(d.revealDeadline)} />
                 </div>
 
-                {d.state === DisputeState.Resolved && d.ruling === 0 && (
+                {d.state === DisputeState.Resolved && (d.ruling === 0 || d.fallbackRuling) && (
                   <div className="banner">
                     No verdict carried. FR-ST-02: every juror who revealed keeps their stake and is
                     paid the fee — only silence is slashed.

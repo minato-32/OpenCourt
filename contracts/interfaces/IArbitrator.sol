@@ -28,6 +28,11 @@ interface IArbitrator {
     /// @notice Raw lifecycle state of a dispute (see DisputeState).
     function disputeState(uint256 disputeId) external view returns (uint8 state);
 
+    /// @notice Whether the delivered ruling is the court's configured fallback rather than one
+    ///         the panel produced. A caller that moves money on the ruling must check this: a
+    ///         fallback settles at ruling 0, nobody is slashed, and no jury agreed on it.
+    function rulingIsFallback(uint256 disputeId) external view returns (bool);
+
     /// @notice Target panel size for a round in this arbitrator. Used to check that an appeal
     ///         ladder actually escalates (FR-AP-01).
     function panelSize() external view returns (uint32);

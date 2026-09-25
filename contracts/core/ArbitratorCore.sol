@@ -657,6 +657,11 @@ contract ArbitratorCore is IArbitrator, IEvidenceGroups {
         return config.panelSize;
     }
 
+    /// @inheritdoc IArbitrator
+    function rulingIsFallback(uint256 disputeId) external view returns (bool) {
+        return _disputes[disputeId].fallbackRuling;
+    }
+
     /// @notice Whether this dispute ended because the panel could not reach the evidence.
     function isVoided(uint256 disputeId) external view returns (bool) {
         return _disputes[disputeId].voided;
