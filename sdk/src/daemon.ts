@@ -270,7 +270,9 @@ export class JurorDaemon {
     if (jr.dutySeats === 0) return; // committed alternate that wasn't promoted — no duty
 
     const d = await this.arb.getDispute(id);
-    const salt = this.keystore.loadSalt(id, d.redraws);
+    // Reveal-time lookup: tolerant, because the commitment on chain is the judge of whether the
+    // salt is the right one. tryCommit stays strict.
+    const salt = this.keystore.loadSaltForReveal(id, d.redraws);
     if (!salt) {
       this.log(`dispute ${id}: SALT LOST — cannot reveal, will be slashed (gammaBps)`);
       return;

@@ -141,16 +141,29 @@ export class SaltKeystore {
     this.write(data);
   }
 
-  /** Load a previously saved salt, or undefined if none is stored. */
+  /**
+   * Load the salt stored for exactly this dispute ROUND, or undefined.
+   *
+   * Deliberately strict. An earlier attempt at backward compatibility let this fall back to the
+   * unkeyed slot for any round, which quietly reintroduced the very bug the round key exists to
+   * prevent: at commit time a redrawn round would find round 0's salt — already published on
+   * chain by that juror's own reveal — and commit against it, leaving the new vote brute-forceable
+   * over the eight possible choices. Commit must never inherit a salt.
+   */
   loadSalt(disputeId: bigint | number, round = 0): string | undefined {
+    return this.read().salts[this.key(disputeId, round)];
+  }
+
+  /**
+   * Load a salt to REVEAL with, tolerating one written before salts were round-keyed.
+   *
+   * Safe here in a way it is not at commit time: a reveal is checked against the commitment
+   * already on chain, so a salt that does not belong simply fails to match and is discarded. The
+   * cost of NOT looking is a juror who cast a real vote being logged SALT LOST and slashed.
+   */
+  loadSaltForReveal(disputeId: bigint | number, round = 0): string | undefined {
     const salts = this.read().salts;
-    const own = salts[this.key(disputeId, round)];
-    if (own !== undefined) return own;
-    // A daemon running the older code wrote to the bare key whatever round the dispute was on,
-    // so a dispute already past a redraw has its live commitment stored there. Missing it would
-    // log SALT LOST and skip a reveal for a vote that was actually cast — a gamma slash on the
-    // juror who did everything right. Writes stay round-keyed; only the lookup falls back.
-    return salts[this.key(disputeId, 0)];
+    return salts[this.key(disputeId, round)] ?? salts[this.key(disputeId, 0)];
   }
 
   /** True if a salt is stored for `disputeId` in `round`. */
