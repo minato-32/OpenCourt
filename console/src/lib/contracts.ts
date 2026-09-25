@@ -72,6 +72,8 @@ export interface CourtConfig {
   gammaBps: number;
   thetaBps: number;
   quorumBps: number;
+  commitRequired: boolean;
+  minPoolWeightMultiple: number;
   appFeeBps: number;
   protocolFeeBps: number;
   pinFeeBps: number;
@@ -97,11 +99,13 @@ export async function courtConfig(core: string): Promise<CourtConfig> {
     gammaBps: Number(c[12]),
     thetaBps: Number(c[13]),
     quorumBps: Number(c[14]),
-    appFeeBps: Number(c[15]),
-    protocolFeeBps: Number(c[16]),
-    pinFeeBps: Number(c[17]),
-    treasury: c[18] as string,
-    pinner: c[19] as string,
+    commitRequired: c[15] as boolean,
+    minPoolWeightMultiple: Number(c[16]),
+    appFeeBps: Number(c[17]),
+    protocolFeeBps: Number(c[18]),
+    pinFeeBps: Number(c[19]),
+    treasury: c[20] as string,
+    pinner: c[21] as string,
   };
 }
 
@@ -110,6 +114,12 @@ export const arbitrationCost = async (core: string) =>
 
 export const disputeCount = async (core: string) =>
   (await read(core, coreAbi, 'disputeCount'))[0] as bigint;
+
+/** FR-PG-06: whether the pool can fill a panel, and what it is short by. */
+export async function courtReadiness(core: string) {
+  const r = await read(core, coreAbi, 'courtReadiness');
+  return { ready: r[0] as boolean, have: r[1] as bigint, need: r[2] as bigint };
+}
 
 export const drawTarget = async (core: string) =>
   (await read(core, coreAbi, 'drawTarget'))[0] as bigint;

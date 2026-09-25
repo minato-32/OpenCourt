@@ -37,6 +37,9 @@ export function DisputeActions({
   const [choice, setChoice] = useState(1);
   const [pass, setPass] = useState('');
   const [saved, setSaved] = useState<keystore.SaltRecord | undefined>();
+  const [relayFor, setRelayFor] = useState('');
+  const [relayChoice, setRelayChoice] = useState(1);
+  const [relaySalt, setRelaySalt] = useState('');
 
   useEffect(() => {
     if (account) setSaved(keystore.peek(court.core, dispute.id, account.h160));
@@ -187,6 +190,46 @@ export function DisputeActions({
               Finalize
             </button>
           </>
+        )}
+
+        {dispute.state === DisputeState.Revealing && (
+          <details className="relay">
+            <summary>Reveal for another juror</summary>
+            <p className="hint">
+              A juror who still has their choice and salt but cannot reach their wallet can hand
+              them to anyone to submit. The commitment is bound to the juror's own address, so the
+              pair either matches what they committed or the call reverts — you cannot vote for
+              them. They do give up secrecy for the rest of the reveal window.
+            </p>
+            <div className="row">
+              <label className="field grow">
+                <span>juror address</span>
+                <input className="input" placeholder="0x…" value={relayFor}
+                  onChange={(e) => setRelayFor(e.target.value.trim())} />
+              </label>
+              <label className="field">
+                <span>choice</span>
+                <select className="select" value={relayChoice}
+                  onChange={(e) => setRelayChoice(Number(e.target.value))}>
+                  {Array.from({ length: dispute.choices }, (_, i) => i + 1).map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="field grow">
+                <span>salt</span>
+                <input className="input" placeholder="0x…" value={relaySalt}
+                  onChange={(e) => setRelaySalt(e.target.value.trim())} />
+              </label>
+              <button
+                className="btn ghost"
+                disabled={tx.state === 'signing' || !/^0x[0-9a-fA-F]{40}$/.test(relayFor) || !/^0x[0-9a-fA-F]{64}$/.test(relaySalt)}
+                onClick={() => run('Relay reveal', 'revealVoteFor', [dispute.id, relayFor, relayChoice, relaySalt])}
+              >
+                Submit on their behalf
+              </button>
+            </div>
+          </details>
         )}
 
         {dispute.state === DisputeState.Resolved && !dispute.ruled && (

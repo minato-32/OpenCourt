@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import {
   arbitrationCost,
   courtConfig,
+  courtReadiness,
   drawTarget,
   policyDescriptor,
   qStar,
@@ -17,6 +18,7 @@ export function CourtCard({ court }: { court: CourtDeployment }) {
   const [cfg, setCfg] = useState<CourtConfig | null>(null);
   const [cost, setCost] = useState<bigint | null>(null);
   const [target, setTarget] = useState<bigint | null>(null);
+  const [ready, setReady] = useState<{ ready: boolean; have: bigint; need: bigint } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [gate, setGate] = useState<{ issuer: string; cooldownBlocks: bigint } | null>(null);
   const [policy, setPolicy] = useState<string>('');
@@ -48,12 +50,18 @@ export function CourtCard({ court }: { court: CourtDeployment }) {
     let live = true;
     setCfg(null);
     setErr(null);
-    Promise.all([courtConfig(court.core), arbitrationCost(court.core), drawTarget(court.core)])
-      .then(([c, a, t]) => {
+    Promise.all([
+      courtConfig(court.core),
+      arbitrationCost(court.core),
+      drawTarget(court.core),
+      courtReadiness(court.core),
+    ])
+      .then(([c, a, t, r]) => {
         if (!live) return;
         setCfg(c);
         setCost(a);
         setTarget(t);
+        setReady(r);
       })
       .catch((e) => live && setErr(e?.message ?? String(e)));
     return () => {
@@ -82,11 +90,21 @@ export function CourtCard({ court }: { court: CourtDeployment }) {
         <Fact k="γ non-reveal" v={bps(cfg.gammaBps)} />
         <Fact k="θ treasury cut" v={bps(cfg.thetaBps)} />
         <Fact k="quorum" v={bps(cfg.quorumBps)} />
+        <Fact k="ballot" v={cfg.commitRequired ? 'secret (commit + reveal)' : 'open'} />
         <Fact k="app / protocol take" v={`${bps(cfg.appFeeBps)} / ${bps(cfg.protocolFeeBps)}`} />
         <Fact k="draw / commit / reveal" v={`${cfg.drawWindowBlocks} / ${cfg.commitBlocks} / ${cfg.revealBlocks} blocks`} />
         <Fact k="activation delay" v={`${cfg.activationDelayBlocks} blocks`} />
         <Fact k="treasury" v={short(cfg.treasury)} mono />
       </div>
+
+      {ready && cfg.minPoolWeightMultiple > 0 && (
+        <div className={`banner ${ready.ready ? 'gate' : 'warn'}`}>
+          {ready.ready
+            ? `Ready to hear cases — ${pas(ready.have)} staked against a ${pas(ready.need)} floor.`
+            : `Not accepting cases — ${pas(ready.have)} staked, ${pas(ready.need)} needed. A dispute raised now
+               would be refused rather than left stalling with no panel to draw.`}
+        </div>
+      )}
 
       {court.registry && (
         <div className="banner gate">

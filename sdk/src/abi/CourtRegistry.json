@@ -237,6 +237,16 @@
             "type": "uint16"
           },
           {
+            "internalType": "bool",
+            "name": "commitRequired",
+            "type": "bool"
+          },
+          {
+            "internalType": "uint32",
+            "name": "minPoolWeightMultiple",
+            "type": "uint32"
+          },
+          {
             "internalType": "uint16",
             "name": "appFeeBps",
             "type": "uint16"
@@ -373,6 +383,16 @@
             "type": "uint16"
           },
           {
+            "internalType": "bool",
+            "name": "commitRequired",
+            "type": "bool"
+          },
+          {
+            "internalType": "uint32",
+            "name": "minPoolWeightMultiple",
+            "type": "uint32"
+          },
+          {
             "internalType": "uint16",
             "name": "appFeeBps",
             "type": "uint16"
@@ -492,6 +512,16 @@
             "internalType": "uint16",
             "name": "quorumBps",
             "type": "uint16"
+          },
+          {
+            "internalType": "bool",
+            "name": "commitRequired",
+            "type": "bool"
+          },
+          {
+            "internalType": "uint32",
+            "name": "minPoolWeightMultiple",
+            "type": "uint32"
           },
           {
             "internalType": "uint16",

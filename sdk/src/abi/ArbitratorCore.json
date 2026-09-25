@@ -79,6 +79,16 @@
             "type": "uint16"
           },
           {
+            "internalType": "bool",
+            "name": "commitRequired",
+            "type": "bool"
+          },
+          {
+            "internalType": "uint32",
+            "name": "minPoolWeightMultiple",
+            "type": "uint32"
+          },
+          {
             "internalType": "uint16",
             "name": "appFeeBps",
             "type": "uint16"
@@ -182,6 +192,22 @@
       }
     ],
     "name": "BondRequired",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "have",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "need",
+        "type": "uint256"
+      }
+    ],
+    "name": "CourtNotReady",
     "type": "error"
   },
   {
@@ -1075,6 +1101,16 @@
         "type": "uint16"
       },
       {
+        "internalType": "bool",
+        "name": "commitRequired",
+        "type": "bool"
+      },
+      {
+        "internalType": "uint32",
+        "name": "minPoolWeightMultiple",
+        "type": "uint32"
+      },
+      {
         "internalType": "uint16",
         "name": "appFeeBps",
         "type": "uint16"
@@ -1124,6 +1160,29 @@
         "internalType": "uint96",
         "name": "",
         "type": "uint96"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "courtReadiness",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "ready",
+        "type": "bool"
+      },
+      {
+        "internalType": "uint256",
+        "name": "have",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "need",
+        "type": "uint256"
       }
     ],
     "stateMutability": "view",
@@ -1727,6 +1786,32 @@
     "type": "function"
   },
   {
+    "inputs": [],
+    "name": "poolStake",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "readinessThreshold",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [
       {
         "internalType": "uint256",
@@ -1827,6 +1912,34 @@
       }
     ],
     "name": "revealVote",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "disputeId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "address",
+        "name": "juror",
+        "type": "address"
+      },
+      {
+        "internalType": "uint8",
+        "name": "choice",
+        "type": "uint8"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "salt",
+        "type": "bytes32"
+      }
+    ],
+    "name": "revealVoteFor",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"

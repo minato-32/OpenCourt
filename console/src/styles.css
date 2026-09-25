@@ -226,3 +226,8 @@ ol.timeline li { display: flex; gap: 10px; align-items: baseline; font-size: 12.
 .file-evidence .row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
 .field.grow { flex: 1 1 260px; }
 .file-evidence input[type="file"] { padding: 6px 0; }
+
+/* Relaying someone else's reveal */
+.relay { margin-top: 10px; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; }
+.relay summary { cursor: pointer; font-size: 13px; }
+.relay .row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
